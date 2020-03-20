@@ -25,7 +25,7 @@ class BaseConfig():
                                  default=1000, help='Number of rounds training federated model')
         self.parser.add_argument('--fed_strategy', type=str,
                                  default='Avg', help='fed_strategy: Avg')
-        self.parser.add_argument('--model', metavar='MODEL', default='LeNet',
+        self.parser.add_argument('--model', metavar='MODEL', default='TestNet',
                                 choices=model_names, help='model architecture: ' +
                                 ' | '.join(model_names))
         # for dataset

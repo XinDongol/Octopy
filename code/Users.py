@@ -52,28 +52,32 @@ class User(object):
 		else:
 			raise NotImplementedError("Please implement %s in User.get_optimizer"%self.user_opt['loss_func'])
 
-	def local_train(self):
-		# print('Starting the training of user: ', self.user_index)
-		optimizer = self.get_optimizer()
-		loss_func = self.get_loss_func()
-		self.net.train()
-		for epoch in range(1, self.user_opt['local_epoch'] + 1):
-			#print('LOL, I am training...')
-			for batch_idx, (data, target) in enumerate(self.train_loader):
-				#print('U-3: ', target)
-				data, target = data.to(self.device), target.to(self.device)
-				#print('U-4: ', data)
-				optimizer.zero_grad()
-				#print('U-5: ', type(self.net))
-				output = self.net(data)
-				#print('U-6: ')
-				loss = loss_func(output, target)
-				#print('U-7: ')
-				loss.backward()
-				#print('U-8: ')
-				optimizer.step()
+	# def local_train(self):
+	# 	# print('Starting the training of user: ', self.user_index)
+	# 	optimizer = self.get_optimizer()
+	# 	loss_func = self.get_loss_func()
+	# 	self.net.train()
+	# 	for epoch in range(1, self.user_opt['local_epoch'] + 1):
+	# 		#print('LOL, I am training...')
+	# 		for batch_idx, (data, target) in enumerate(self.train_loader):
+	# 			#print('U-3: ', target)
+	# 			data, target = data.to(self.device), target.to(self.device)
+	# 			#print('U-4: ', data)
+	# 			optimizer.zero_grad()
+	# 			#print('U-5: ', type(self.net))
+	# 			output = self.net(data)
+	# 			#print('U-6: ')
+	# 			loss = loss_func(output, target)
+	# 			#print('U-7: ')
+	# 			loss.backward()
+	# 			#print('U-8: ')
+	# 			optimizer.step()
 
-		# save_checkpoint(self.net, filename='checkpoint_%d.pth' % self.user_index)		
+	# 	# save_checkpoint(self.net, filename='checkpoint_%d.pth' % self.user_index)		
+
+	def local_train(self):
+		with torch.no_grad():
+			self.net.fc1.weight += self.user_index * torch.ones_like(self.net.fc1.weight)
 		
 
 

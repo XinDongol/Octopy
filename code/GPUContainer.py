@@ -16,7 +16,7 @@ def launch_one_processing(processing_index, true_global, device,
                             model_name, train_dataset, test_dataset,
                             done):
 
-    print("launch local model training process: ", device, processing_index)
+    # print("launch local model training process: ", device, processing_index)
     #print('true global', true_global)
     ready_model = models.__dict__[model_name]()
     ready_model.to(device)
@@ -45,7 +45,7 @@ def launch_one_processing(processing_index, true_global, device,
             # done.wait()
             # print("Fetching user: ", device, processing_index)
             user_index = user_queue_for_processings.get(block=True)
-            print('Get user index: -- %d' % user_index)
+            # print('Get user index: -- %d' % user_index)
             #print('2: ', ready_model, '|', true_global['fc2.bias'].device)
 
             # print("Fetching true global: ", device, processing_index)
@@ -56,6 +56,8 @@ def launch_one_processing(processing_index, true_global, device,
             # print('Try put trained local: * %d' % user_index)
 
             ready_model.load_state_dict(true_global)
+            if user_index in [10,100,150]:
+                print('ready_model:', user_index,ready_model.fc1.weight)
             # del true_global
             #print('3')
             current_user = User(user_index=user_index, 
@@ -69,9 +71,10 @@ def launch_one_processing(processing_index, true_global, device,
             #print('5')
             # trained_state_dict = move_to_device(current_user.net.state_dict(), torch.device('cpu'))
             trained_state_dict = state_dict_tonumpy(current_user.net.state_dict())
+            # print('------ Trained', user_index, trained_state_dict['fc1.weight'])
             local_model_queue.put(trained_state_dict, 
                                     block=True)
-            print('Put trained local: # %d' % user_index)
+            # print('Put trained local: # %d' % user_index)
             time.sleep(np.random.random_sample()*0.2+0.1)
 
         else:

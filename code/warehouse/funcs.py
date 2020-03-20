@@ -117,6 +117,9 @@ def launch_process_update_partial(local_model_queue, global_model, done):
             del local_model
             if flag == 1:
                 # done.set()                                               # if enough number of local models are added to partial model
+                for p in global_model.saved_model.parameters():
+                    print('Updated true global', p)
+                # assert 1==0
                 break                                                   # this process can be shut down
         else: 
             print('*** Local model queue empty...')

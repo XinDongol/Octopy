@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-__all__ = ['LeNet']
+__all__ = ['LeNet', 'TestNet']
 
 class LeNet(nn.Module):
     def __init__(self):
@@ -20,4 +20,17 @@ class LeNet(nn.Module):
         x = x.view(-1, 4*4*50)
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
+        return x
+
+class TestNet(nn.Module):
+    def __init__(self):
+        super(TestNet, self).__init__()
+        self.fc1 = nn.Linear(3, 3, bias=False)
+
+        # this model starts from all zeros
+        for p in self.fc1.parameters():
+            p.data.copy_(torch.zeros_like(p))
+
+    def forward(self, x):
+        x = self.fc1(x)
         return x

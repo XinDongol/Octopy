@@ -99,6 +99,7 @@ def main():
 
     #---------------------- Start --------------------------
     for round_idx in range(config.opt.num_rounds):  # how many rounds you want to run
+        print('='*60)
         print("Starting Round %d: " % round_idx)
         # specify the users'indx-list for this round
         # GPU_Containers = gpu_update_users(user_list = list(range(int(config.opt.num_users))), 
@@ -111,21 +112,21 @@ def main():
                                             test_dataset = test_dataset,
                                             splitted_data = splitted_data,
                                             default_user=None)
-        print('Get user config')
+        # print('Get user config')
         # start multiprocessing training for each gpu
         for gpu_launcher in GPU_Containers:
             # gpu_launcher.update_done(done)   # update event for each round
             gpu_launcher.update_true_global(global_model)   # pull from global model
             gpu_launcher.all_users_opt.update(user_config)
-        print('Update user config and true global')
+        # print('Update user config and true global')
         
         [ user_queue_for_processings.put(i) for i in range(int(config.opt.num_users)) ]
-        print('---------------------- queue size', user_queue_for_processings.qsize())
+        # print('---------------------- queue size', user_queue_for_processings.qsize())
 
         # take trained local models from the queue and then aggregate them into global model
         launch_process_update_partial(local_model_queue, global_model, done)
 
-        test_top1, test_loss = global_model.evaluate(test_dataset)
+        # test_top1, test_loss = global_model.evaluate(test_dataset)
 
 
 

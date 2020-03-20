@@ -18,10 +18,11 @@ class Global_Model:
 
     def Incre_FedAvg(self, w_in):
         self.incre_counter += 1
-        print('**** Updated global ', self.incre_counter)
+        # print('**** Updated global ', self.incre_counter)
         # print('counter: ', self.incre_counter)
         if self.incre_counter == 1:
-            self.state_dict = w_in
+            for k in self.state_dict.keys():
+                self.state_dict[k] = w_in[k] / self.capacity
             # print('flag: ', 0)
             return 0
 
@@ -33,11 +34,11 @@ class Global_Model:
 
         
         if self.incre_counter == self.capacity:
-            print('This is the end of this round ...')
+            # print('This is the end of this round ...')
             self.round += 1
             self.incre_counter = 0
             self.saved_model.load_state_dict(state_dict_fromnumpy(self.state_dict))
-            print('flag: ', 1)
+            # print('flag: ', 1)
             return 1
 
         # print('flag: ', 0)
