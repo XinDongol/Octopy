@@ -3,51 +3,44 @@ import torch
 from torch import nn
 from warehouse.funcs import *
 
+
 class Global_Model:
     def __init__(self, model, capacity):
         '''
         capacity = num of gpus
         '''
         self.incre_counter = 0      # within current round, how many local models you have received
-                                    # NOTE: before you pull global model, you may want to make sure that incre_conuter == 0
         self.round = 0              # current round of Federated Learning
         self.capacity = capacity    # how many local models you expect to receive per round
-        self.state_dict = state_dict_tonumpy(model.state_dict())  # weights of global model
-        self.saved_model = model # global model of last round
-
+        self.state_dict = state_dict_tonumpy(
+            model.state_dict())  # weights of global model
+        self.saved_model = model  # global model of last round
 
     def Incre_FedAvg(self, w_in):
         self.incre_counter += 1
-        # print('**** Updated global ', self.incre_counter)
-        # print('counter: ', self.incre_counter)
         if self.incre_counter == 1:
             for k in self.state_dict.keys():
                 self.state_dict[k] = w_in[k] / self.capacity
-            # print('flag: ', 0)
             return 0
 
         for k in self.state_dict.keys():  # iterate every weight element
             self.state_dict[k] += w_in[k] / self.capacity
             # self.state_dict[k] += torch.div(w_in[k].cpu(), self.incre_counter)
             # self.state_dict[k] = torch.div(self.state_dict[k], 1/self.incre_counter+1)
-        
 
-        
         if self.incre_counter == self.capacity:
-            # print('This is the end of this round ...')
             self.round += 1
             self.incre_counter = 0
-            self.saved_model.load_state_dict(state_dict_fromnumpy(self.state_dict))
-            # print('flag: ', 1)
+            self.saved_model.load_state_dict(
+                state_dict_fromnumpy(self.state_dict))
             return 1
 
-        # print('flag: ', 0)
         return 0
 
     def evaluate(self, val_dataset):
         val_loader = torch.utils.data.DataLoader(val_dataset,
-                        batch_size=100, shuffle=False,
-                        num_workers=0)
+                                                 batch_size=100, shuffle=False,
+                                                 num_workers=0)
 
         batch_time = AverageMeter('Time', ':6.3f')
         losses = AverageMeter('Loss', ':.4e')
@@ -63,7 +56,6 @@ class Global_Model:
         # TODO: this should be got from config
         # criterion = nn.CrossEntropyLoss().cuda()
         criterion = nn.CrossEntropyLoss()
-
 
         with torch.no_grad():
             end = time.time()
@@ -90,12 +82,7 @@ class Global_Model:
                 #     progress.display(i)
 
             # TODO: this should also be done with the ProgressMeter
-            print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
-                .format(top1=top1, top5=top5))
+            # print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
+            #       .format(top1=top1, top5=top5))
 
         return top1.avg, losses.avg
-
-
-
-        
-    
