@@ -1,6 +1,14 @@
 import torch
 from collections import OrderedDict
 import time
+from torch.utils.tensorboard import SummaryWriter
+
+
+def abs_mean_state_dict(state_dict):
+    new_state_dict = {}
+    for key in state_dict.keys():
+        new_state_dict[key] = abs(state_dict[key]).mean()
+    return new_state_dict
 
 def clone_state_dict(state_dict):
     new_state_dict = {}
@@ -17,10 +25,10 @@ def state_dict_tonumpy(state_dict):
     return new_state_dict
 
 
-def state_dict_fromnumpy(state_dict):
+def state_dict_fromnumpy(state_dict, requires_grad=False):
     new_state_dict = {}
     for key in state_dict.keys():
-        new_state_dict[key] = torch.from_numpy(state_dict[key])
+        new_state_dict[key] = torch.tensor(state_dict[key], requires_grad=requires_grad)
     return new_state_dict
 
 
@@ -41,8 +49,7 @@ def launch_process_update_partial(local_model_queue, global_model, done):
     while True:   # scan the queue
         # get a trained local model from the queue
         local_model = local_model_queue.get(block=True)
-        flag = global_model.Incre_FedAvg(
-            local_model)  # add it to partial model
+        flag = global_model.Incre_FedAvg(local_model)  # add it to partial model
         del local_model
         if flag == 1:
             # done.set()   # if enough number of local models are added to partial model
@@ -170,3 +177,12 @@ def accuracy(output, target, topk=(1,)):
             correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
+    
+class AutoStep():
+    def __init__(self, func, name):
+        self.func = func
+        self.step = 0
+        self.name = name
+    def write(self, val):
+        self.func(self.name, val, self.step)
+        self.step += 1    

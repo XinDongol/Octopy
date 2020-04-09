@@ -1,8 +1,7 @@
 import copy
 import torch
 from torchvision import datasets, transforms
-from sampling import mnist_iid, mnist_noniid, mnist_noniid_unequal
-from sampling import cifar_iid, cifar_noniid
+from sampling import *
 
 
 def get_dataset(opt):
@@ -16,18 +15,27 @@ def get_dataset(opt):
     Returns:
         user_groups (dict): {user idx: list of sample idx} 
     """
-    print('****', opt.dataset)
+    # print('****', opt.dataset)
     if opt.dataset == 'cifar10' or opt.dataset == 'cifar100':
-        apply_transform = transforms.Compose(
-            [transforms.ToTensor(),
-             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
         if opt.dataset == 'cifar10':
+            transform_train = transforms.Compose([                                   
+                transforms.RandomCrop(32, padding=4),                                       
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                ])
             train_dataset = datasets.CIFAR10(opt.data_dir, train=True, download=True,
-                                        transform=apply_transform)
+                                        transform=transform_train)
+            
+            transform_test = transforms.Compose([                                           
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                ])
+            
 
             test_dataset = datasets.CIFAR10(opt.data_dir, train=False, download=True,
-                                        transform=apply_transform)
+                                        transform=transform_test)
         else:
             train_dataset = datasets.CIFAR100(opt.data_dir, train=True, download=True,
                                         transform=apply_transform)
@@ -37,16 +45,16 @@ def get_dataset(opt):
 
         # sample training data amongst users
         if opt.iid:
-            # Sample IID user data from Mnist
-            user_groups = cifar_iid(train_dataset, opt.num_users)
+            # Sample IID user data from CIFAR
+            user_groups = split_iid(train_dataset, opt.num_users)
         else:
-            # Sample Non-IID user data from Mnist
+            # Sample Non-IID user data from CIFAR
             if opt.unequal:
                 # Chose uneuqal splits for every user
                 raise NotImplementedError()
             else:
                 # Chose euqal splits for every user
-                user_groups = cifar_noniid(train_dataset, opt.num_users)
+                user_groups = split_noniid(train_dataset, opt.num_users)
 
     elif opt.dataset == 'mnist' or opt.dataset == 'fmnist':
 
@@ -63,7 +71,7 @@ def get_dataset(opt):
         # sample training data amongst users
         if opt.iid:
             # Sample IID user data from Mnist
-            user_groups = mnist_iid(train_dataset, opt.num_users)
+            user_groups = split_iid(train_dataset, opt.num_users)
         else:
             # Sample Non-IID user data from Mnist
             if opt.unequal:
@@ -72,5 +80,28 @@ def get_dataset(opt):
             else:
                 # Chose euqal splits for every user
                 user_groups = mnist_noniid(train_dataset, opt.num_users)
+                
+    elif opt.dataset == 'test':
+        train_dataset = torch.utils.data.TensorDataset(torch.tensor(list(range(opt.num_users**2))))
+        test_dataset = torch.utils.data.TensorDataset(torch.tensor(list(range(opt.num_users**2))))
+        user_groups = {}
+        for k in range(opt.num_users):
+            user_groups[k] = np.array([k, k**2])
+    else:
+        raise NotImplementedError()
 
     return train_dataset, test_dataset, user_groups
+
+
+if __name__ == '__main__':
+    class Opt():
+        def __init__(self):
+            self.dataset = 'cifar10'
+            self.iid = False
+            self.unequal = False
+            self.num_users = 20
+            self.data_dir = '/n/holyscratch01/kung_lab/xin/cifar_data'
+            
+    opt = Opt()
+    
+    train_dataset, test_dataset, user_groups = get_dataset(opt)

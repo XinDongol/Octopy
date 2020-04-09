@@ -11,7 +11,7 @@ class BaseConfig():
 
     def initialize(self):
         model_names = sorted(name for name in models.__dict__
-                             if name.islower() and not name.startswith("__")
+                             if not name.islower() and not name.startswith("__")
                              and callable(models.__dict__[name]))
 
         # for system
@@ -27,6 +27,8 @@ class BaseConfig():
                                  default=600, help='Total number of users')
         self.parser.add_argument('--num_rounds', type=int,
                                  default=1000, help='Number of rounds training federated model')
+        self.parser.add_argument('--user_fraction', type=float,
+                                 default=0.1, help='fraction of users')
         self.parser.add_argument('--fed_strategy', type=str,
                                  default='Avg', help='fed_strategy: Avg')
         self.parser.add_argument('--model', metavar='MODEL', default='TestNet',
@@ -35,7 +37,7 @@ class BaseConfig():
         # for dataset
         self.dataset_config = self.parser.add_argument_group('dataset_group')
         self.dataset_config.add_argument('--dataset', type=str,
-                                         default='mnist', choices=['mnist', 'fmnist', 'cifar10', 'cifar100'])
+                                         default='mnist', choices=['test','mnist', 'fmnist', 'cifar10', 'cifar100'])
         self.dataset_config.add_argument('--data_dir', type=str,
                                          help='dir of dataset')
         self.dataset_config.add_argument('--iid', action='store_true',
@@ -45,15 +47,19 @@ class BaseConfig():
         # for user
         self.user_config = self.parser.add_argument_group('user_group')
         self.user_config.add_argument('--local_epoch', type=int,
-                                      default=1, help='Number of epochs training local models')
+                                      default=5, help='Number of epochs training local models')
         self.user_config.add_argument('--optimizer', type=str,
                                       default='SGD', help='optimizer type: one of SGD | Adam ')
-        self.user_config.add_argument('--lr', type=int,
+        self.user_config.add_argument('--lr', type=float,
                                       default=0.001, help='learning rate')
+        self.user_config.add_argument('--weights_decay', type=float, 
+                                      default=5e-4, help='weights decay')
+        self.user_config.add_argument('--momentum', type=float,
+                                      default=0, help='momentum for the optimizer')
         self.user_config.add_argument('--loss_func', type=str,
                                       default='CrossEntropyLoss', help='loss function')
         self.user_config.add_argument('--local_batchsize', type=int,
-                                      default='256', help='local_batchsize')
+                                      default='32', help='local_batchsize')
 
         self.initialized = True
 

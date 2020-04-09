@@ -2,6 +2,8 @@ from copy import deepcopy
 import torch
 from torch import nn
 from warehouse.funcs import *
+import numpy as np
+import pickle
 
 
 class Global_Model:
@@ -12,30 +14,53 @@ class Global_Model:
         self.incre_counter = 0      # within current round, how many local models you have received
         self.round = 0              # current round of Federated Learning
         self.capacity = capacity    # how many local models you expect to receive per round
-        self.state_dict = state_dict_tonumpy(
-            model.state_dict())  # weights of global model
+        self.saved_state_dict = init_saved_state_dict(model)
         self.saved_model = model  # global model of last round
+        self.received_models = []
 
+    '''
     def Incre_FedAvg(self, w_in):
         self.incre_counter += 1
+        
         if self.incre_counter == 1:
-            for k in self.state_dict.keys():
-                self.state_dict[k] = w_in[k] / self.capacity
+            for k in self.__state_dict.keys():
+                self.__state_dict[k] = w_in[k] / self.capacity
             return 0
 
-        for k in self.state_dict.keys():  # iterate every weight element
-            self.state_dict[k] += w_in[k] / self.capacity
-            # self.state_dict[k] += torch.div(w_in[k].cpu(), self.incre_counter)
-            # self.state_dict[k] = torch.div(self.state_dict[k], 1/self.incre_counter+1)
+        for k in self.__state_dict.keys():  # iterate every weight element
+            self.__state_dict[k] += w_in[k] / self.capacity
 
         if self.incre_counter == self.capacity:
             self.round += 1
             self.incre_counter = 0
             self.saved_model.load_state_dict(
-                state_dict_fromnumpy(self.state_dict))
+                state_dict_fromnumpy(self.__state_dict))
             return 1
 
         return 0
+    '''
+    
+    def Incre_FedAvg(self, w_in):
+        self.received_models.append(w_in)
+        if len(self.received_models) == self.capacity:
+            # ------v
+            pickle.dump(self.received_models, open('./test_save/received_models.p', 'wb'))
+            # ------^
+            self.round += 1
+            self.saved_state_dict = average_weights(self.received_models)
+            # ------v
+            pickle.dump(self.saved_state_dict, open('./test_save/saved_state_dict.p', 'wb'))
+            assert 1==0
+            # ------^
+            self.saved_model.load_state_dict(
+                state_dict_fromnumpy(self.saved_state_dict))
+            self.received_models = []
+            return 1
+        else:
+            return 0
+            
+            
+        
 
     def evaluate(self, val_dataset):
         val_loader = torch.utils.data.DataLoader(val_dataset,
@@ -86,3 +111,35 @@ class Global_Model:
             #       .format(top1=top1, top5=top5))
 
         return top1.avg, losses.avg
+
+
+def average_weights(w):
+    '''
+    Returns the average of the weights.
+    '''
+    w_avg = deepcopy(w[0])
+    keys = list(w_avg.keys())
+    for key in keys:
+        for i in range(1, len(w)):
+            w_avg[key] += w[i][key]
+        w_avg[key] /=  len(w)
+    
+    for key in keys:
+        w_avg[key+'.var'] = (w[0][key]-w_avg[key]) ** 2
+    
+    for key in keys:
+        for i in range(1, len(w)):
+            w_avg[key+'.var'] += (w[i][key]-w_avg[key]) ** 2
+        w_avg[key+'.var'] /= len(w)
+        
+    return w_avg
+
+
+def init_saved_state_dict(model):
+    saved_state_dict = state_dict_tonumpy(
+            model.state_dict())  # weights of global model in numpy
+    
+    for key in model.state_dict().keys():
+        saved_state_dict[key+'.var'] = np.ones_like(saved_state_dict[key])
+        
+    return saved_state_dict

@@ -2,14 +2,15 @@ from warehouse.funcs import *
 from Users import User
 import models
 import torch.multiprocessing as mp
-import copy
+from copy import deepcopy
 import time
 import torch
 from torch.utils.data.sampler import SubsetRandomSampler
 from torch.utils.data import DataLoader
 import numpy as np
-
-
+import pickle
+    
+    
 def launch_one_processing(processing_index, true_global, device,
                           user_queue_for_processings, local_model_queue,
                           all_users_opt,
@@ -31,17 +32,24 @@ def launch_one_processing(processing_index, true_global, device,
     while True:
         # done.wait()
         user_index = user_queue_for_processings.get(block=True)
+        # print('user_index', user_index)
         ready_model.load_state_dict(true_global)
         
         current_user = User(user_index=user_index,
                             ready_model=ready_model,
+                            true_global=true_global,
                             all_users_opt=all_users_opt,
                             train_loader=train_loader,
                             test_loader=test_loader)
         current_user.local_train()
         
         trained_state_dict = state_dict_tonumpy(current_user.net.state_dict())
-        local_model_queue.put(trained_state_dict, block=True)
+        
+        # ------v
+        pickle.dump(trained_state_dict, open('./test_save/'+ str(user_index) +'.p', 'wb'))
+        # ------^
+        
+        local_model_queue.put(deepcopy(trained_state_dict), block=True)
         
         time.sleep(np.random.random_sample()*0.2+0.1)
 
@@ -62,7 +70,7 @@ class GPU_Container:
         self.user_queue_for_processings = user_queue_for_processings
         # state dict of the true global model for current round
         self.true_global = move_to_device(
-            global_model.saved_model.state_dict(), self.device)
+            state_dict_fromnumpy(global_model.saved_state_dict), self.device)
         for key in self.true_global.keys():
             self.true_global[key] = self.true_global[key].share_memory_()
 
@@ -76,7 +84,7 @@ class GPU_Container:
 
     def update_true_global(self, global_model):
         state_dict_inplace_update(
-            self.true_global, global_model.saved_model.state_dict())
+            self.true_global, state_dict_fromnumpy(global_model.saved_state_dict))
 
     def launch_gpu(self):
         # assert self.done is not None
