@@ -46,7 +46,7 @@ def launch_one_processing(processing_index, true_global, device,
         trained_state_dict = state_dict_tonumpy(current_user.net.state_dict())
         
         # ------v
-        pickle.dump(trained_state_dict, open('./test_save/'+ str(user_index) +'.p', 'wb'))
+        # pickle.dump(trained_state_dict, open('./test_save/'+ str(user_index) +'.p', 'wb'))
         # ------^
         
         local_model_queue.put(deepcopy(trained_state_dict), block=True)

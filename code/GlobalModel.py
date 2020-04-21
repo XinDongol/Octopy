@@ -44,13 +44,13 @@ class Global_Model:
         self.received_models.append(w_in)
         if len(self.received_models) == self.capacity:
             # ------v
-            pickle.dump(self.received_models, open('./test_save/received_models.p', 'wb'))
+            # pickle.dump(self.received_models, open('./test_save/received_models.p', 'wb'))
             # ------^
             self.round += 1
             self.saved_state_dict = average_weights(self.received_models)
             # ------v
-            pickle.dump(self.saved_state_dict, open('./test_save/saved_state_dict.p', 'wb'))
-            assert 1==0
+            # pickle.dump(self.saved_state_dict, open('./test_save/saved_state_dict.p', 'wb'))
+            # assert 1==0
             # ------^
             self.saved_model.load_state_dict(
                 state_dict_fromnumpy(self.saved_state_dict))

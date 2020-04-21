@@ -83,7 +83,8 @@ class DatasetSplit(torch.utils.data.Dataset):
     def __getitem__(self, item):
         image, label = self.dataset[self.idxs[item]]
         return image, torch.tensor(label)
-  
+
+    
 def create_device(net, device_id, trainset, data_idxs, lr=0.1,
                   milestones=None, batch_size=128):
     if milestones == None:
@@ -183,29 +184,29 @@ def iid_sampler(dataset, num_devices, data_pct):
     return {i: torch.randperm(total_samples)[:device_samples].tolist() 
             for i in range(num_devices)}
     
-data_pct = 0.1
-epochs = 1000
-num_devices = 1
-device_pct = 0.1
-net = ConvNet().cuda()
-criterion = nn.CrossEntropyLoss()
+# data_pct = 0.1
+# epochs = 1000
+# num_devices = 1
+# device_pct = 0.1
+# net = ConvNet().cuda()
+# criterion = nn.CrossEntropyLoss()
 
-# Part 1.1: Implement cifar_idd to generate data_idxs for create_device
-data_idxs = iid_sampler(trainset, num_devices, data_pct)
+# # Part 1.1: Implement cifar_idd to generate data_idxs for create_device
+# data_idxs = iid_sampler(trainset, num_devices, data_pct)
 
-# Part 1.1: Create the device
-device = create_device(net, 0, trainset, data_idxs[0],
-                       milestones=[250, 500, 750])
+# # Part 1.1: Create the device
+# device = create_device(net, 0, trainset, data_idxs[0],
+#                        milestones=[250, 500, 750])
 
-# Part 1.1: Train the device model for 100 epochs and plot the result
-# Standard Training Loop
-start_time = time.time()
-for epoch in range(epochs):
-    train(epoch, device)
-    # To speed up running time, only evaluate the test set every 10 epochs
-    if epoch > 0 and epoch % 10 == 0:
-        test(epoch, device)
-    device['scheduler'].step()
+# # Part 1.1: Train the device model for 100 epochs and plot the result
+# # Standard Training Loop
+# start_time = time.time()
+# for epoch in range(epochs):
+#     train(epoch, device)
+#     # To speed up running time, only evaluate the test set every 10 epochs
+#     if epoch > 0 and epoch % 10 == 0:
+#         test(epoch, device)
+#     device['scheduler'].step()
     
     
 def average_weights(devices):
@@ -231,20 +232,66 @@ def get_devices_for_round(devices, device_pct):
     return [devices[i] for i in device_idxs]
 
 
-total_time = time.time() - start_time
-print('Total training time: {} seconds'.format(total_time))
+'''
+def update_fisher_params(self, current_ds, batch_size, num_batch=None):
+    dl = DataLoader(current_ds, batch_size, shuffle=True)
+    log_liklihoods = []
+    for i, (input, target) in enumerate(dl):
+        if num_batch is not None:
+            if i > num_batch:
+                break
+        output = F.log_softmax(self.model(input), dim=1)
+        log_liklihoods.append(output[:, target])
+    log_likelihood = torch.cat(log_liklihoods).mean()
+    grad_log_liklihood = autograd.grad(log_likelihood, self.model.parameters())
+    _buff_param_names = [param[0].replace('.', '__') for param in self.model.named_parameters()]
+    for _buff_param_name, param in zip(_buff_param_names, grad_log_liklihood):
+        self.model.register_buffer(_buff_param_name+'_estimated_fisher', param.data.clone() ** 2)
+'''
+        
+        
+def fisher_matrix_diag(t,x,y,model,criterion,sbatch=20):
+    # Init
+    fisher={}
+    for n,p in model.named_parameters():
+        fisher[n]=torch.zero_like(p.data)
+    # Compute
+    model.train()
+#     for i in tqdm(range(0,x.size(0),sbatch),desc='Fisher diagonal',ncols=100,ascii=True):
+#         b=torch.LongTensor(np.arange(i,np.min([i+sbatch,x.size(0)]))).cuda()
+#         images=torch.autograd.Variable(x[b],volatile=False)
+#         target=torch.autograd.Variable(y[b],volatile=False)
+    for images, target in dataloader:
+        images, target = images.cuda(), target.cuda()
+        # Forward and backward
+        model.zero_grad()
+        outputs=model.forward(images)
+        loss=criterion(t,outputs[t],target)
+        loss.backward()
+        # Get gradients
+        for n,p in model.named_parameters():
+            if p.grad is not None:
+                fisher[n]+=images.size(0)*p.grad.data.pow(2)
+    # Mean
+    for n,_ in model.named_parameters():
+        fisher[n]=fisher[n]/x.size(0)
+        fisher[n].requires_grad=False
+    return fisher
 
-# plotting code
-plt.plot(device['test_acc_tracker'])
-plt.xlabel('Round')
-plt.ylabel('Classification Accuracy')
+# total_time = time.time() - start_time
+# print('Total training time: {} seconds'.format(total_time))
+
+# # plotting code
+# plt.plot(device['test_acc_tracker'])
+# plt.xlabel('Round')
+# plt.ylabel('Classification Accuracy')
 
 
-rounds = 100
+rounds = 1
 local_epochs = 4
 num_devices = 50
 device_pct = 0.1
-data_pct = 0.1
+data_pct = 0.08
 net = ConvNet().cuda()
 criterion = nn.CrossEntropyLoss()
 

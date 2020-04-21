@@ -28,8 +28,8 @@ class User(object):
         self.device = torch.device(next(self.net.parameters()).device)
 
     def get_optimizer(self):
+        # print(self.user_opt['lr'])
         if self.user_opt['optimizer'] == 'SGD':
-            # print(self.user_opt['lr'])
             return torch.optim.SGD(self.net.parameters(), lr=self.user_opt['lr'],
                                    weight_decay=self.user_opt['weights_decay'],
                                    momentum=self.user_opt['momentum'])
@@ -55,17 +55,17 @@ class User(object):
         self.net.train()
         for epoch in range(1, self.user_opt['local_epoch'] + 1):
             for batch_idx, (data, target) in enumerate(self.train_loader):
+                # print('User: %d, Epoch: %d, Batch_idx: %d' % (self.user_index, epoch, batch_idx))
                 data, target = data.to(self.device), target.to(self.device)
                 optimizer.zero_grad()
                 output = self.net(data)
                 baseloss = loss_func(output, target)
-                ewcloss = ewc_loss(self.net.named_parameters(), self.true_global, 200)
-                # print('base_loss', baseloss)
-                # print('ewc_loss', ewcloss)
+                ewcloss = ewc_loss(self.net.named_parameters(), self.true_global, 1e-6)
                 loss = baseloss + ewcloss
-                
                 loss.backward()
                 optimizer.step()
+            # print('base_loss', baseloss)
+            # print('ewc_loss', ewcloss)
 
         # save_checkpoint(self.net, filename='checkpoint_%d.pth' % self.user_index)
 
