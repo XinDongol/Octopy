@@ -10,19 +10,22 @@ import numpy as np
 import torchvision
 import torchvision.transforms as transforms
 # import matplotlib.pyplot as plt
-from model import ConvNet
+import model
 import fl_data
 import quant
 import utils
+import agg
 
 from torch.utils.tensorboard import SummaryWriter
 
-writer = SummaryWriter('./32-bit')
+writer = SummaryWriter('./test')
 nbit = 32
 rounds = 100
-local_epochs = 4
-num_devices = 50
-device_pct = 0.2
+local_epochs = 20
+num_devices = 5
+device_pct = 1.
+local_lr = 0.01
+global_lr = 0.05
 
 # Using CIFAR-10 again as in Assignment 1
 # Load training data
@@ -57,8 +60,9 @@ def create_device(net, device_id, trainset, data_idxs, lr=0.1,
         milestones = [25, 50, 75]
 
     device_net = copy.deepcopy(net)
-    optimizer = torch.optim.SGD(device_net.parameters(), lr=lr, momentum=0.9,
-                                weight_decay=5e-4)
+    # optimizer = torch.optim.SGD(device_net.parameters(), lr=lr, momentum=0.9,
+    #                             weight_decay=5e-4)
+    optimizer = torch.optim.Adam(device_net.parameters(), lr=lr, weight_decay=5e-4)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
                                                      milestones=milestones,
                                                      gamma=0.1)
@@ -84,7 +88,7 @@ def create_device(net, device_id, trainset, data_idxs, lr=0.1,
         }
   
 def train(epoch, device, tb=True):
-    net.train()
+    device['net'].train()
     train_loss, correct, total = 0, 0, 0
     for batch_idx, (inputs, targets) in enumerate(device['dataloader']):
         inputs, targets = inputs.cuda(), targets.cuda()
@@ -101,8 +105,8 @@ def train(epoch, device, tb=True):
         correct += predicted.eq(targets).sum().item()
         acc = 100. * correct / total
         dev_id = device['id']
-        print(f'\r(Device {dev_id}/Epoch {epoch}) ' + 
-                         f'Train Loss: {loss:.3f} | Train Acc: {acc:.3f}')
+        # print(f'\r(Device {dev_id}/Epoch {epoch}) ' + 
+        #                  f'Train Loss: {loss:.3f} | Train Acc: {acc:.3f}')
     device['train_acc_tracker'].append(acc)
 
     if tb:
@@ -111,7 +115,7 @@ def train(epoch, device, tb=True):
     return loss, acc
 
 def test(epoch, device, tb=True):
-    net.eval()
+    device['net'].eval()
     test_loss, correct, total = 0, 0, 0
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(testloader):
@@ -134,54 +138,47 @@ def test(epoch, device, tb=True):
         device['tb_writers']['test_acc'].write(acc)
     return loss, acc
     
-    
-## Code Cell 1.5
-
-
-def average_weights(devices):
-    '''
-    Returns the average of the weights.
-    '''
-    w = [device['net'].state_dict() for device in devices]
-    w_avg = copy.deepcopy(w[0])
-    for key in w_avg.keys():
-        for i in range(1, len(w)):
-            w_avg[key] += w[i][key]
-        w_avg[key] = torch.div(w_avg[key], len(w))
-        
-    return w_avg
 
 def get_devices_for_round(devices, device_pct):
     '''
     '''
+    assert device_pct>0 and device_pct<=1, 'device pct must be in the range of (0,1].'
     num_devices_in_round = round(device_pct*len(devices))
     device_idxs = np.random.permutation(len(devices))[:num_devices_in_round]
     return [devices[i] for i in device_idxs]
 
 
-net = ConvNet().cuda()
+# net = model.ConvNet().cuda()
+net = model.CifarNet().cuda()
 criterion = nn.CrossEntropyLoss()
 
 data_idxs_dict = fl_data.uniform_random_split(trainset, num_devices)
-devices = [create_device(net, i, trainset, data_idxs_dict[i])
+# deep copy net for each devices
+devices = [create_device(net, i, trainset, data_idxs_dict[i], lr=local_lr)
            for i in range(num_devices)]
 
-old_w_avg = net.state_dict()
+w_avg = net.state_dict()
 ## IID Federated Learning
+
 start_time = time.time()
 for round_num in range(rounds):
     round_devices = get_devices_for_round(devices, device_pct)
-    for device in round_devices:
+    for round_device_idx, device in enumerate(round_devices):
         for local_epoch in range(local_epochs):
-            train(local_epoch, device)
-        quant.quantize_model(device['net'], nbit)
+            local_loss, local_acc = train(local_epoch, device)
+        print(f'\r(Device {round_device_idx}) ' + 
+                        f'Train Loss: {local_loss:.3f} | Train Acc: {local_acc:.3f}')
+        # quant.quantize_model(device['net'], nbit)
+        device['binary_diff'] = quant.sign_state_dict(agg.diff_model(old=w_avg, new=device['net']))
 
-    new_w_avg = average_weights(round_devices)
+    # new_w_avg = agg.average_weights(round_devices)
+    w_binary_diff = agg.majority_vote(round_devices)
+    
     # update the old avg
-    old_w_avg = new_w_avg
+    w_avg = agg.apply_diff(old=w_avg, diff=w_binary_diff, lr=global_lr)
 
     for device in devices:
-        device['net'].load_state_dict(new_w_avg)
+        device['net'].load_state_dict(w_avg)
         device['optimizer'].zero_grad()
         device['optimizer'].step()
         device['scheduler'].step()

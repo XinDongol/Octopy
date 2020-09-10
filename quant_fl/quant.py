@@ -76,3 +76,9 @@ def quantize_model(model, nbit):
             m.weight.data, m.adaptive_scale = dorefa_g(m.weight, nbit)
             if m.bias is not None:
                 m.bias.data,_ = dorefa_g(m.bias, nbit, m.adaptive_scale)
+
+
+def sign_state_dict(state_dict):
+    for n, t in state_dict.items():
+        t.sign_()
+    return state_dict
