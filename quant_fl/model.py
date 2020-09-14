@@ -28,7 +28,7 @@ class ConvNet(nn.Module):
             nn.AdaptiveAvgPool2d(1)
             )
 
-        self.classifier = nn.Linear(256, 10)
+        self.classifier = nn.Linear(256, 10, bias=False)
 
     def forward(self, x):
         h = self.model(x)
