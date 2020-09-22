@@ -19,6 +19,18 @@ import torch.nn.functional as F
 
 from torch.utils.tensorboard import SummaryWriter
 
+import quant
+
+
+def image_preprocess(tensor):
+    # sigmoid
+    tensor = F.sigmoid(tensor)
+    # quant
+    tensor = quant.pixel_quant(tensor, nbit=8, in_place=False)
+    # normalize
+    tensor = quant.ImageNormalize(mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010)).normalize(tensor, False)
+    
+    return tensor
 
 
 class DeepInversionClass(object):
@@ -60,7 +72,7 @@ class DeepInversionClass(object):
         # init tensorboard writer
         self.writer = SummaryWriter(path+'/log/')
 
-    def get_images(self, net_student, reset_inputs, reset_targets, reset_opt):
+    def get_images(self, net_student, reset_inputs, reset_targets, reset_opt, iterations_per_layer=2000, quant_input=False):
         writer = self.writer
             
         kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
@@ -89,7 +101,12 @@ class DeepInversionClass(object):
                 [random.randint(0, 10) for _ in range(self.bs)]).to('cuda')
             
         if (not hasattr(self, 'inputs')) or (reset_inputs):
-            self.inputs = random_images(bsz=self.bs, nch=3, h=self.image_resolution, w=self.image_resolution,
+
+            if quant_input:
+                self.inputs = torch.tensor(np.random.uniform(low=-5.0,high=5.0,size=[self.bs, 3, self.image_resolution, self.image_resolution]),
+                                           requires_grad=True, device=torch.device('cuda'), dtype=torch.float)
+            else:
+                self.inputs = random_images(bsz=self.bs, nch=3, h=self.image_resolution, w=self.image_resolution,
                            means=(0.4914, 0.4822, 0.4465), stds=(0.2023, 0.1994, 0.2010),
                            use_cuda=True)
 
@@ -98,9 +115,9 @@ class DeepInversionClass(object):
             # self.optimizer = optim.Adam([self.inputs, self.raw_targets], lr=self.lr,
             #                    betas=[0.5, 0.9], eps=1e-8)
             self.optimizer = optim.Adam([self.inputs], lr=self.lr)
-            iterations_per_layer = 2000
+            # iterations_per_layer = 2000
         else:
-            iterations_per_layer = 10
+            i# terations_per_layer = 10
         # lr_scheduler = lr_cosine_policy(self.lr, 100, iterations_per_layer)
 
         
@@ -111,7 +128,12 @@ class DeepInversionClass(object):
             # lr_scheduler(optimizer, iteration_loc, iteration_loc)
             # args for `lr_scheduler`: optimizzer, iteration, epoch
 
-            inputs_jit = self.inputs
+            if quant_input:
+                inputs_jit = image_preprocess(self.inputs)
+            else:
+                inputs_jit = self.inputs
+            
+            
 
             
             # apply random jitter offsets
@@ -203,8 +225,11 @@ class DeepInversionClass(object):
         # to reduce memory consumption by states of the optimizer we deallocate memory
         self.optimizer.state = collections.defaultdict(dict)
 
-        return self.inputs, self.targets
-
+        if quant_input:
+            return image_preprocess(self.inputs), self.targets
+        else:
+            return self.inputs, self.targets
+        
     def save_images(self, images, targets):
         # method to store generated images locally
         local_rank = torch.cuda.current_device()
