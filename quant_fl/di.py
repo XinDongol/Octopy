@@ -35,13 +35,14 @@ def image_preprocess(tensor):
 
 class DeepInversionClass(object):
     def __init__(self, bs=10,
-                 net_teacher=None,
+                 net_teacher=None, main_teacher=None,
                  path="/raid/gen_images/"):
 
         # for reproducibility
         torch.manual_seed(torch.cuda.current_device())
 
         self.net_teacher = net_teacher
+        self.net_main_teacher = main_teacher if main_teacher else self.net_teacher
 
         self.image_resolution = 32
         self.do_flip = True
@@ -81,6 +82,7 @@ class DeepInversionClass(object):
 
         net_teacher = self.net_teacher
         net_teacher.eval()
+        self.net_main_teacher.eval()
         if net_student:
             net_student.eval()
 
@@ -98,7 +100,7 @@ class DeepInversionClass(object):
         if (not hasattr(self, 'targets')) or (reset_targets):
             # only works for classification now, for other tasks need to provide target vector
             self.targets = torch.LongTensor(
-                [random.randint(0, 10) for _ in range(self.bs)]).to('cuda')
+                [random.randint(0, 9) for _ in range(self.bs)]).to('cuda')
             
         if (not hasattr(self, 'inputs')) or (reset_inputs):
 
@@ -152,18 +154,20 @@ class DeepInversionClass(object):
             # forward pass
             self.optimizer.zero_grad()
             net_teacher.zero_grad()
+            self.net_main_teacher.zero_grad()
 
-            outputs = net_teacher(inputs_jit)
+            outputs = self.net_main_teacher(inputs_jit)
+            _       = net_teacher(inputs_jit)
 
             
 
             #! R_cross classification loss
-            # loss = criterion(outputs, self.targets)
-            loss = 0
+            loss = criterion(outputs, self.targets)
+            # loss = 0
             # self.targets = F.softmax(self.raw_targets, dim=1)
             # loss = kl_loss(F.log_softmax(outputs, dim=1), self.targets)
             # loss_cross = loss.item()  # record this loss
-            loss_cross = 0 
+            loss_cross = loss.item()
 
             #! R_prior losses
             loss_var_l1, loss_var_l2 = get_image_prior_losses(inputs_jit)
@@ -352,6 +356,7 @@ def denormalize(image_tensor, use_fp16=False):
     '''
     convert floats back to input
     '''
+    image_tensor = image_tensor.detach().clone()
     if use_fp16:
         mean = np.array([0.485, 0.456, 0.406], dtype=np.float16)
         std = np.array([0.229, 0.224, 0.225], dtype=np.float16)
@@ -361,7 +366,7 @@ def denormalize(image_tensor, use_fp16=False):
 
     for c in range(3):
         m, s = mean[c], std[c]
-        image_tensor[:, c] = torch.clamp(image_tensor[:, c] * s + m, 0, 1)
+        image_tensor[c, :] = torch.clamp(image_tensor[c, :] * s + m, 0, 1)
 
     return image_tensor
 
