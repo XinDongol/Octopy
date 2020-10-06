@@ -35,13 +35,14 @@ def image_preprocess(tensor):
 
 class DeepInversionClass(object):
     def __init__(self, bs=10,
-                 net_teacher=None,
+                 net_teacher=None, main_teacher=None,
                  path="/raid/gen_images/"):
 
         # for reproducibility
         torch.manual_seed(torch.cuda.current_device())
 
         self.net_teacher = net_teacher
+        self.net_main_teacher = main_teacher if main_teacher else self.net_teacher
 
         self.image_resolution = 32
         self.do_flip = True
@@ -81,7 +82,7 @@ class DeepInversionClass(object):
 
         net_teacher = self.net_teacher
         net_teacher.eval()
-
+        self.net_main_teacher.eval()
         if net_student:
             net_student.eval()
 
@@ -119,7 +120,7 @@ class DeepInversionClass(object):
             # iterations_per_layer = 2000
         else:
             assert 1==0
-
+            # terations_per_layer = 10
         # lr_scheduler = lr_cosine_policy(self.lr, 100, iterations_per_layer)
 
         
@@ -154,7 +155,10 @@ class DeepInversionClass(object):
             # forward pass
             self.optimizer.zero_grad()
             net_teacher.zero_grad()
-            outputs = net_teacher(inputs_jit)
+            self.net_main_teacher.zero_grad()
+
+            outputs = self.net_main_teacher(inputs_jit)
+            _       = net_teacher(inputs_jit)
 
             
 
@@ -164,7 +168,7 @@ class DeepInversionClass(object):
             # self.targets = F.softmax(self.raw_targets, dim=1)
             # loss = kl_loss(F.log_softmax(outputs, dim=1), self.targets)
             # loss_cross = loss.item()  # record this loss
-            loss_cross = 0
+            loss_cross = loss.item()
 
             #! R_prior losses
             loss_var_l1, loss_var_l2 = get_image_prior_losses(inputs_jit)
@@ -354,16 +358,16 @@ def denormalize(image_tensor, use_fp16=False):
     convert floats back to input
     '''
     image_tensor = image_tensor.detach().clone()
-
-    mean = np.array([0.4914, 0.4822, 0.4465])
-    std = np.array([0.2023, 0.1994, 0.2010])
+    if use_fp16:
+        mean = np.array([0.485, 0.456, 0.406], dtype=np.float16)
+        std = np.array([0.229, 0.224, 0.225], dtype=np.float16)
+    else:
+        mean = np.array([0.485, 0.456, 0.406])
+        std = np.array([0.229, 0.224, 0.225])
 
     for c in range(3):
         m, s = mean[c], std[c]
-        if len(image_tensor.size())==4:
-            image_tensor[:, c, :, :] = torch.clamp(image_tensor[:, c, :, :] * s + m, 0, 1)
-        else:
-            image_tensor[c, :, :] = torch.clamp(image_tensor[c, :, :] * s + m, 0, 1)
+        image_tensor[c, :] = torch.clamp(image_tensor[c, :] * s + m, 0, 1)
 
     return image_tensor
 
