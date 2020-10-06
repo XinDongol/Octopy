@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torchvision
 
 def quantizer(input, nbit):
     '''
@@ -40,6 +41,59 @@ def dorefa_g(w, nbit, adaptive_scale=None):
     w = 2 * adaptive_scale * (quantizer(w, nbit) - 0.5)
 
     return w, adaptive_scale
+
+# class QuantImage(torch.autograd.Function):
+#     @staticmethod
+#     def forward(ctx, input, alpha=None):
+#         input.div
+
+class PixelQuant(torch.autograd.Function):
+    '''
+    quant pixel which is in the range of [0,1]
+    '''
+    @staticmethod
+    def forward(ctx, input, nbit, in_place):
+        assert input.ge(0.0).all().item(), 'PixelQuant only support numbers in [0,1]'
+        assert input.le(1.0).all().item(), 'PixelQuant only support numbers in [0,1]'
+        res = quantizer(input, nbit)
+        if in_place:
+            input.data.copy_(res)
+        return res
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output, None, None
+    
+def pixel_quant(input, nbit, in_place):
+    return PixelQuant().apply(input, nbit, in_place)
+
+
+class ImageNormalize():
+    def __init__(self, mean, std):
+        self.mean = torch.tensor(mean, requires_grad=False)
+        self.std  = torch.tensor(std, requires_grad=False)
+        
+        if (self.std == 0).any():
+            raise ValueError('std evaluated to zero after conversion to {}, leading to division by zero.'.format(dtype))
+            
+        assert self.mean.ndim == 1
+        self.mean = self.mean[None, :, None, None]
+        assert self.std.ndim == 1
+        self.std = self.std[None, :, None, None]
+        
+    def normalize(self, tensor, inplace):
+        if not inplace:
+            tensor = tensor.clone()
+
+        dtype = tensor.dtype
+        self.mean = torch.as_tensor(self.mean, dtype=dtype, device=tensor.device)
+        self.std = torch.as_tensor(self.std, dtype=dtype, device=tensor.device)
+        
+        tensor.sub_(self.mean).div_(self.std)
+        return tensor
+
+        
+
+
 
 # def dorefa_g(w, nbit, adaptive_scale=None):
 #     '''
