@@ -7,7 +7,7 @@ class DatasetSplit(torch.utils.data.Dataset):
     def __init__(self, dataset, idxs):
         self.dataset = dataset
         self.idxs = [int(i) for i in idxs]
-        self.targets = [dataset.targets[i] for i in self.idxs]
+        self.targets = [self.dataset.targets[i] for i in self.idxs]
 
     def __len__(self):
         return len(self.idxs)
@@ -50,6 +50,11 @@ def non_iid_split(dataset, num_clients, shards_per_client=2):
 if __name__ == '__main__':
     trainset = torchvision.datasets.CIFAR10(root='/cifar', train=True, download=True)
     dict_users = non_iid_split(trainset, 20, 2)
+    for l in dict_users.values():
+        label = [trainset[i][1] for i in l]
+        print(set(label), len(label))
+
+    set, 20, 2)
     for l in dict_users.values():
         label = [trainset[i][1] for i in l]
         print(set(label), len(label))

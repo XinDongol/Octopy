@@ -4,6 +4,8 @@ from collections import OrderedDict
 from argparse import ArgumentParser
 import json
 import random 
+import sys
+sys.path.append('../../../')
 
 import torch
 import torch.nn as nn
@@ -16,11 +18,13 @@ import torchvision.transforms as transforms
 from torch.utils.data import TensorDataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-import fl_data
+from quant_fl import fl_data
+from quant_fl import agg
 import utils
 import resnet_cifar
 
 from runx.logx import logx
+import timm
 
 parser = ArgumentParser()
 parser.add_argument('--logdir', type=str)
@@ -34,14 +38,13 @@ parser.add_argument('--local_lr', type=float)
 parser.add_argument('--local_bsz', type=int)
 
 # di process
-parser.add_argument('--di_bn', type=int, choices=[0,1])
-parser.add_argument('--di_weights', type=int, choices=[0,1])
-parser.add_argument('--iterations_per_layer', type=int)
-parser.add_argument('--de_batch_size', type=int)
+parser.add_argument('--local_di', type=int, choices=[0,1])
+parser.add_argument('--central_di', type=int, choices=[0,1])
+parser.add_argument('--di_batch_size', type=int)
 
 args = parser.parse_args()
 
-logx.initialize(logdir=args.logdir, coolname=True, tensorboard=True,
+logx.initialize(logdir=args.logdir, coolname=True, tensorboard=False,
                 hparams=vars(args))
 
 writer = SummaryWriter(args.logdir)
@@ -57,7 +60,7 @@ transform_train = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
-trainset = torchvision.datasets.CIFAR10(root='/cifar', train=True, 
+trainset = torchvision.datasets.CIFAR10(root='~/results/cifar', train=True, 
                                         download=True,
                                         transform=transform_train)
 
@@ -65,7 +68,7 @@ transform_test = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
-testset = torchvision.datasets.CIFAR10(root='/cifar', train=False,
+testset = torchvision.datasets.CIFAR10(root='~/results/cifar', train=False,
                                        download=True,
                                        transform=transform_test)
 testloader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False,
@@ -106,10 +109,11 @@ def create_device(net, device_id, trainset, data_idxs, lr=0.1,
                        'test_acc' : utils.AutoStep(writer.add_scalar, 'client/%s/test_acc'%device_id)}
         }
   
-def train(epoch, device, tb=True):
+def train(epoch, device, tb=True, di=False):
     device['net'].train()
     train_loss, correct, total = 0, 0, 0
-    for batch_idx, (inputs, targets) in enumerate(device['dataloader']):
+    dataloader = device['di_dataloader'] if di else device['dataloader']
+    for batch_idx, (inputs, targets) in enumerate(dataloader):
         inputs, targets = inputs.cuda(), targets.cuda()
         device['optimizer'].zero_grad()
         outputs = device['net'](inputs)
@@ -131,6 +135,7 @@ def train(epoch, device, tb=True):
         device['tb_writers']['train_loss'].write(loss)
         device['tb_writers']['train_acc'].write(acc)
     return loss, acc
+
 
 def test(epoch, device, tb=True):
     device['net'].eval()
@@ -239,7 +244,7 @@ for device in devices+[central_device]:
 
     device['di_inputs'] = torch.randn((args.di_batch_size, 3, 32, 32), 
             requires_grad=True, device='cuda')
-    device['di_optimizer'] = optim.Adam([device['di_input']], lr=0.05)
+    device['di_optimizer'] = optim.Adam([device['di_inputs']], lr=0.05)
 
 
 start_time = time.time()
@@ -250,54 +255,86 @@ for round_num in range(args.rounds):
     
     for round_device_idx, device in enumerate(round_devices):
         for local_epoch in range(args.local_epochs):
-            local_loss, local_acc = train(local_epoch, device)
+            local_loss, local_acc = train(local_epoch, device, di=True if (round_num!=0) and (args.central_di) else False)
         logx.msg(f'\r(Device {round_device_idx}) ' + 
                         f'Train Loss: {local_loss:.3f} | Train Acc: {local_acc:.3f}')
-        ########################### 
-        # do di on local model
-        ###########################
-        targets = torch.LongTensor(np.random.choice(list(set(device['dataloader'].dataset.targets)), 
-                                        args.di_batch_size, replace=True)).to('cuda')
-        di_tensor = deepinversion_cifar10.get_images(device['net'], device['loss_r_feature_layers'],
-            bs=args.di_batch_size, epochs=2000, idx=-1, var_scale=2.5e-5,
-            net_student=None, prefix=None, competitive_scale=0.0, 
-            train_writer = None, global_iteration=None,
-            use_amp=False,
-            optimizer = device['di_optimizer'], inputs = device['di_inputs'], targets = targets,
-            bn_reg_scale = 10.0, random_labels = True, l2_coeff=0.0, 
-            name_use=logx.logdir, save_image=False)
-        device['inv_image'] = targets
-        device['inv_target'] = di_tensor
-        all_inv_image.append(di_tensor)
-        all_inv_target.append(targets)
         
+        if args.local_di:
+            ########################### 
+            # do di on local model
+            ###########################
+            targets = torch.LongTensor(np.random.choice(list(set(device['dataloader'].dataset.targets)), 
+                                            args.di_batch_size, replace=True)).to('cuda')
+            di_tensor = deepinversion_cifar10.get_images(device['net'], device['loss_r_feature_layers'],
+                bs=args.di_batch_size, epochs=2000, idx=-1, var_scale=2.5e-5,
+                net_student=None, prefix=None, competitive_scale=0.0, 
+                train_writer = None, global_iteration=None,
+                use_amp=False,
+                optimizer = device['di_optimizer'], inputs = device['di_inputs'], targets = targets,
+                bn_reg_scale = 10.0, random_labels = True, l2_coeff=0.0, 
+                name_use=logx.logdir, save_image=False)
+            device['inv_image'] = targets
+            device['inv_target'] = di_tensor
+            all_inv_image.append(di_tensor)
+            all_inv_target.append(targets)
+        
+    # weight average
     w_avg = agg.average_weights(round_devices) # average all in the state_dict
-    if args.di_bn:
+    
+    # local di
+    if args.local_di:
         logx.msg('====> update central device with local di images...')
         central_device['net'].load_state_dict(w_avg)
         update_bn_stat(central_device['net'], all_inv_image, invbn_epochs=50)
         w_avg = central_device['net'].state_dict()
 
+    # central di
     if args.central_di:
         logx.msg('====> get di image of central device...')
+
+        central_di_num = int(len(data_idxs_dict[0])/args.di_batch_size + 1)
+        all_central_di_tensor = []
+        all_central_di_target = []
+        for central_di_idx in range(central_di_num):
+            targets = torch.LongTensor(np.random.choice(10, 
+                                args.di_batch_size, replace=True)).to('cuda')
+            di_tensor = deepinversion_cifar10.get_images(central_device['net'],
+                            central_device['loss_r_feature_layers'],
+                            bs=args.di_batch_size, epochs=2000, idx=-1, var_scale=2.5e-5,
+                            net_student=None, prefix=None, competitive_scale=0.0, 
+                            train_writer = None, global_iteration=None,
+                            use_amp=False,
+                            optimizer = central_device['di_optimizer'], 
+                            inputs = central_device['di_inputs'], targets = targets,
+                            bn_reg_scale = 10.0, random_labels = True, l2_coeff=0.0, 
+                            name_use=logx.logdir, save_image=False)
+            
+            all_central_di_tensor.append(di_tensor.data.cpu())
+            all_central_di_target.append(targets.data.cpu())
+        
+        central_device['central_di'] = torch.utils.data.TensorDataset(
+                                            torch.cat(all_central_di_tensor),
+                                            torch.cat(all_central_di_target))
         
     for device in devices:
         device['net'].load_state_dict(w_avg)
         device['optimizer'].zero_grad()
         device['optimizer'].step()
         device['scheduler'].step()
+        if args.central_di:
+            new_dataset = torch.utils.data.ConcatDataset([device['dataloader'].dataset, 
+                                                      central_device['central_di']])
+            device['di_dataloader'] = torch.utils.data.DataLoader(new_dataset,
+                                                         batch_size=args.local_bsz,
+                                                         shuffle=True,
+                                                         num_workers=8)
 
     # test accuracy after aggregation
     round_loss, round_acc = test(round_num, devices[0], tb=False)
-    writer.add_scalar('round/loss', round_loss, round_num)
-    writer.add_scalar('round/acc', round_acc, round_num)
-    print('====> Round:%d, Acc:%.4f'%(round_num, round_acc))
+    metrics = {'top1': round_acc, 'loss': round_loss}
+    logx.metric('val', metrics, round_num)
+    logx.msg('====> Round:%d, Acc:%.4f'%(round_num, round_acc))
 
 
 total_time = time.time() - start_time
-print('Total training time: {} seconds'.format(total_time))ound_acc, round_num)
-    print('====> Round:%d, Acc:%.4f'%(round_num, round_acc))
-
-
-total_time = time.time() - start_time
-print('Total training time: {} seconds'.format(total_time)))
+logx.msg('Total training time: {} seconds'.format(total_time))
