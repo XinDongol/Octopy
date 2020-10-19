@@ -7,6 +7,7 @@ class DatasetSplit(torch.utils.data.Dataset):
     def __init__(self, dataset, idxs):
         self.dataset = dataset
         self.idxs = [int(i) for i in idxs]
+        self.targets = [self.dataset.targets[i] for i in self.idxs]
 
     def __len__(self):
         return len(self.idxs)
