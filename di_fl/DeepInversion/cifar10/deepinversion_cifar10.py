@@ -74,8 +74,9 @@ class DeepInversionFeatureHook():
 
 def get_images(net, loss_r_feature_layers, bs=256, epochs=1000, idx=-1, var_scale=0.00005,
                net_student=None, prefix=None, competitive_scale=0.01, train_writer = None, global_iteration=None,
-               use_amp=False,
-               optimizer = None, inputs = None, bn_reg_scale = 0.0, random_labels = False, l2_coeff=0.0,
+               use_amp=False, main_loss=1.0,
+               optimizer = None, inputs = None, targets=None,
+               bn_reg_scale = 0.0, random_labels = False, l2_coeff=0.0,
                name_use='./test', save_image=True):
     '''
     Function returns inverted images from the pretrained model, parameters are tight to CIFAR dataset
@@ -120,10 +121,11 @@ def get_images(net, loss_r_feature_layers, bs=256, epochs=1000, idx=-1, var_scal
     optimizer.state = collections.defaultdict(dict)  # Reset state of optimizer
 
     # target outputs to generate
-    if random_labels:
-        targets = torch.LongTensor([random.randint(0,9) for _ in range(bs)]).to('cuda')
-    else:
-        targets = torch.LongTensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9] * 25 + [0, 1, 2, 3, 4, 5]).to('cuda')
+    if targets is None:
+        if random_labels:
+            targets = torch.LongTensor([random.randint(0,9) for _ in range(bs)]).to('cuda')
+        else:
+            targets = torch.LongTensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9] * 25 + [0, 1, 2, 3, 4, 5]).to('cuda')
 
 
 
@@ -140,7 +142,7 @@ def get_images(net, loss_r_feature_layers, bs=256, epochs=1000, idx=-1, var_scal
         optimizer.zero_grad()
         net.zero_grad()
         outputs = net(inputs_jit)
-        loss = criterion(outputs, targets)
+        loss = criterion(outputs, targets) * main_loss
         loss_target = loss.item()
 
         # competition loss, Adaptive DeepInvesrion
