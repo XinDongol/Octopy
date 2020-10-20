@@ -2,7 +2,7 @@ LOGROOT: ~/runx_log
 FARM: ngc
 
 ngc:
-    NGC_LOGROOT: ~/from_ws
+    NGC_LOGROOT: /myws
     WORKSPACE: retail-x
     SUBMIT_CMD: 'ngc batch run'
     RESOURCES:
@@ -10,8 +10,9 @@ ngc:
         instance: dgx1v.32g.1.norm
         ace: nv-us-west-2
         result: /result
-        team: via
+        team: iva
         org: nvidian
 ult
         team: via
         org: nvidian
+ian

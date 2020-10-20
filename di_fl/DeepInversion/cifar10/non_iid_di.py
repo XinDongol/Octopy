@@ -44,7 +44,7 @@ parser.add_argument('--central_di_batch_size', type=int)
 
 args = parser.parse_args()
 
-logx.initialize(logdir=args.logdir, coolname=True, tensorboard=False,
+logx.initialize(logdir=args.logdir, coolname=True, tensorboard=True,
                 hparams=vars(args))
 
 writer = SummaryWriter(args.logdir)
@@ -92,7 +92,7 @@ def create_device(net, device_id, trainset, data_idxs, lr=0.1,
     device_trainloader = torch.utils.data.DataLoader(device_trainset,
                                                      batch_size=batch_size,
                                                      shuffle=True,
-                                                     num_workers=8)
+                                                     num_workers=8, drop_last=True)
     return {
         'net': device_net,
         'id': device_id,
@@ -172,12 +172,20 @@ def mix_train(epoch, device, central_device, tb=True, mix_mode=0):
     device['net'].train()
     train_loss, correct, total = 0, 0, 0
     
+    # print(len(central_device['central_di'].dataset))
+    dataloader_iterator = iter(central_device['central_di'])
+    
     for batch_idx, (local_inputs, local_targets) in enumerate(device['dataloader']):
         device['optimizer'].zero_grad()
 
         local_inputs, local_targets = local_inputs.cuda(), local_targets.cuda()
 
-        di_inputs, di_targets = next(iter(central_device['central_di']))
+        try:
+            di_inputs, di_targets = next(dataloader_iterator)
+        except StopIteration:
+            dataloader_iterator = iter(central_device['central_di'])
+            di_inputs, di_targets = next(dataloader_iterator)
+            
         di_inputs, di_targets = di_inputs.cuda(), di_targets.cuda()
 
         if mix_mode==0:
@@ -210,17 +218,18 @@ def mix_train(epoch, device, central_device, tb=True, mix_mode=0):
         train_loss += loss.item()
         device['train_loss_tracker'].append(loss.item())
         loss = train_loss / (batch_idx + 1)
-        _, predicted = outputs.max(1)
-        total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
-        acc = 100. * correct / total
-        dev_id = device['id']
+        # _, predicted = outputs.max(1)
+        # total += targets.size(0)
+        # correct += predicted.eq(targets).sum().item()
+        # acc = 100. * correct / total
+        acc = 0.0
+        # dev_id = device['id']
         # print(f'\r(Device {dev_id}/Epoch {epoch}) ' + 
         #                  f'Train Loss: {loss:.3f} | Train Acc: {acc:.3f}')
     if tb:
-        device['train_acc_tracker'].append(acc)
+        # device['train_acc_tracker'].append(acc)
         device['tb_writers']['train_loss'].write(loss)
-        device['tb_writers']['train_acc'].write(acc)
+        # device['tb_writers']['train_acc'].write(acc)
     return loss, acc
 
 
@@ -329,7 +338,7 @@ for device in devices+[central_device]:
                 deepinversion_cifar10.DeepInversionFeatureHook(module))
     device['loss_r_feature_layers'] = loss_r_feature_layers
 
-    device['di_inputs'] = torch.randn((args.di_batch_size, 3, 32, 32), 
+    device['di_inputs'] = torch.randn((args.central_di_batch_size, 3, 32, 32), 
             requires_grad=True, device='cuda')
     device['di_optimizer'] = optim.Adam([device['di_inputs']], lr=0.05)
 
@@ -392,7 +401,7 @@ for round_num in range(args.rounds):
         all_central_di_target = []
         for central_di_idx in range(central_di_num):
             targets = torch.LongTensor(np.random.choice(10, 
-                                args.di_batch_size, replace=True)).to('cuda')
+                                args.central_di_batch_size, replace=True)).to('cuda')
             di_tensor = deepinversion_cifar10.get_images(central_device['net'],
                             central_device['loss_r_feature_layers'],
                             bs=args.central_di_batch_size, epochs=2000, idx=-1, var_scale=2.5e-5,
@@ -411,7 +420,7 @@ for round_num in range(args.rounds):
                                         torch.utils.data.TensorDataset(
                                             torch.cat(all_central_di_tensor),
                                             torch.cat(all_central_di_target)),
-                                            batch_size=args.local_bsz, shuffle=True)
+                                            batch_size=args.local_bsz, shuffle=True, drop_last=True)
         
     for device in devices:
         device['net'].load_state_dict(w_avg)

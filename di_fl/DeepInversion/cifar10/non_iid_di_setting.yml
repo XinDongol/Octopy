@@ -12,4 +12,4 @@ HPARAMS:
 
     local_di: [0]
     central_di: [-1,0,1,2]
-    di_batch_size: [300]
+    central_di_batch_size: [300]
