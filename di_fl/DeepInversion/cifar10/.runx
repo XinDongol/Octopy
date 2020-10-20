@@ -1,7 +1,17 @@
-LOGROOT: /home/jovyan/codes/Octopy/di_fl/DeepInversion/cifar10
-FARM: fake
+LOGROOT: ~/runx_log
+FARM: ngc
 
-fake:
-    SUBMIT_CMD: na
+ngc:
+    NGC_LOGROOT: ~/from_ws
+    WORKSPACE: retail-x
+    SUBMIT_CMD: 'ngc batch run'
     RESOURCES:
-        dummy: na
+        image: nvidian/pytorch:20.05-py3-base
+        instance: dgx1v.32g.1.norm
+        ace: nv-us-west-2
+        result: /result
+        team: via
+        org: nvidian
+ult
+        team: via
+        org: nvidian

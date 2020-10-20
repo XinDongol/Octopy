@@ -5,9 +5,11 @@ HPARAMS:
     num_devices: [20]
     device_pct: [1.0]
     non_iid: [1]
-    local_epochs: [5]
+
+    local_epochs: [1]
     local_lr: [0.01]
     local_bsz: [64]
-    local_di: [0, 1]
-    central_di: [0, 1]
-    di_batch_size: [100]
+
+    local_di: [0]
+    central_di: [-1,0,1,2]
+    di_batch_size: [300]
