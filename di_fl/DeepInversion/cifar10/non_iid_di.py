@@ -32,6 +32,7 @@ parser.add_argument('--rounds', type=int)
 parser.add_argument('--num_devices', type=int)
 parser.add_argument('--device_pct', type=float)
 parser.add_argument('--non_iid', type=int, choices=[0, 1])
+parser.add_argument('--scheduler', type=str, choices=['multistep', 'cosine'])
 # local setting
 parser.add_argument('--local_epochs', type=int)
 parser.add_argument('--local_lr', type=float)
@@ -39,6 +40,7 @@ parser.add_argument('--local_bsz', type=int)
 
 # di process
 parser.add_argument('--local_di', type=int, choices=[0,1])
+parser.add_argument('--local_di_batch_size', type=int)
 parser.add_argument('--central_di', type=int, choices=[-1,0,1,2])
 parser.add_argument('--central_di_batch_size', type=int)
 
@@ -85,9 +87,13 @@ def create_device(net, device_id, trainset, data_idxs, lr=0.1,
     optimizer = torch.optim.SGD(device_net.parameters(), lr=lr, momentum=0.9,
                                 weight_decay=5e-4)
     # optimizer = torch.optim.Adam(device_net.parameters(), lr=lr, weight_decay=5e-4)
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                                                     milestones=milestones,
-                                                     gamma=0.1)
+    if args.scheduler=='multistep':
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
+                                                         milestones=milestones,
+                                                         gamma=0.1)
+    else:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.rounds)
+        
     device_trainset = fl_data.DatasetSplit(trainset, data_idxs)
     device_trainloader = torch.utils.data.DataLoader(device_trainset,
                                                      batch_size=batch_size,
@@ -330,7 +336,7 @@ devices = [create_device(net, i, trainset, data_idxs_dict[i], lr=args.local_lr, 
 ## register hooks, inputs and optimizer
 #############################
 import deepinversion_cifar10
-for device in devices+[central_device]:
+for d_idx, device in enumerate([central_device]+devices):
     loss_r_feature_layers = []
     for module in device['net'].modules():
         if isinstance(module, nn.BatchNorm2d):
@@ -338,8 +344,13 @@ for device in devices+[central_device]:
                 deepinversion_cifar10.DeepInversionFeatureHook(module))
     device['loss_r_feature_layers'] = loss_r_feature_layers
 
-    device['di_inputs'] = torch.randn((args.central_di_batch_size, 3, 32, 32), 
-            requires_grad=True, device='cuda')
+    if d_idx==0:
+        device['di_inputs'] = torch.randn((args.central_di_batch_size, 3, 32, 32), 
+                requires_grad=True, device='cuda')
+    else:
+        device['di_inputs'] = torch.randn((args.local_di_batch_size, 3, 32, 32), 
+                requires_grad=True, device='cuda')        
+    
     device['di_optimizer'] = optim.Adam([device['di_inputs']], lr=0.05)
 
 
@@ -362,39 +373,39 @@ for round_num in range(args.rounds):
         logx.msg(f'\r(Device {round_device_idx}) ' + 
                         f'Train Loss: {local_loss:.3f} | Train Acc: {local_acc:.3f}')
         
-        # if args.local_di:
-        #     ########################### 
-        #     # do di on local model
-        #     ###########################
-        #     targets = torch.LongTensor(np.random.choice(list(set(device['dataloader'].dataset.targets)), 
-        #                                     args.di_batch_size, replace=True)).to('cuda')
-        #     di_tensor = deepinversion_cifar10.get_images(device['net'], device['loss_r_feature_layers'],
-        #         bs=args.di_batch_size, epochs=2000, idx=-1, var_scale=2.5e-5,
-        #         net_student=None, prefix=None, competitive_scale=0.0, 
-        #         train_writer = None, global_iteration=None,
-        #         use_amp=False,
-        #         optimizer = device['di_optimizer'], inputs = device['di_inputs'], targets = targets,
-        #         bn_reg_scale = 10.0, random_labels = True, l2_coeff=0.0, 
-        #         name_use=logx.logdir, save_image=False)
-        #     device['inv_image'] = targets
-        #     device['inv_target'] = di_tensor
-        #     all_inv_image.append(di_tensor)
-        #     all_inv_target.append(targets)
+        if args.local_di:
+            ########################### 
+            # do di on local model
+            ###########################
+            targets = torch.LongTensor(np.random.choice(list(set(device['dataloader'].dataset.targets)), 
+                                            args.local_di_batch_size, replace=True)).to('cuda')
+            di_tensor, _ = deepinversion_cifar10.get_images(device['net'], device['loss_r_feature_layers'],
+                bs=args.local_di_batch_size, epochs=2000, idx=-1, var_scale=2.5e-5,
+                net_student=None, prefix=None, competitive_scale=0.0, 
+                train_writer = None, global_iteration=None,
+                use_amp=False, main_loss=1.0,
+                optimizer = device['di_optimizer'], inputs = device['di_inputs'], targets = targets,
+                bn_reg_scale = 10.0, random_labels = True, l2_coeff=0.0, 
+                name_use=logx.logdir, save_image=False)
+            device['inv_image'] = di_tensor
+            device['inv_target'] = targets
+            all_inv_image.append(di_tensor)
+            all_inv_target.append(targets)
         
     # weight average
     w_avg = agg.average_weights(round_devices) # average all in the state_dict
     
-    # # local di
-    # if args.local_di:
-    #     logx.msg('====> update central device with local di images...')
-    #     central_device['net'].load_state_dict(w_avg)
-    #     update_bn_stat(central_device['net'], all_inv_image, invbn_epochs=50)
-    #     w_avg = central_device['net'].state_dict()
+    # local di
+    if args.local_di:
+        logx.msg('====> update central device with local di images...')
+        central_device['net'].load_state_dict(w_avg)
+        update_bn_stat(central_device['net'], all_inv_image, invbn_epochs=50)
+        w_avg = central_device['net'].state_dict()
 
     # central di
     if args.central_di!=-1:
         logx.msg('====> get di image of central device...')
-
+        central_device['net'].load_state_dict(w_avg)
         # central_di_num = int(len(data_idxs_dict[0])/args.di_batch_size + 1)
         central_di_num = 1
         all_central_di_tensor = []
@@ -402,7 +413,7 @@ for round_num in range(args.rounds):
         for central_di_idx in range(central_di_num):
             targets = torch.LongTensor(np.random.choice(10, 
                                 args.central_di_batch_size, replace=True)).to('cuda')
-            di_tensor = deepinversion_cifar10.get_images(central_device['net'],
+            di_tensor, _ = deepinversion_cifar10.get_images(central_device['net'],
                             central_device['loss_r_feature_layers'],
                             bs=args.central_di_batch_size, epochs=2000, idx=-1, var_scale=2.5e-5,
                             net_student=None, prefix=None, competitive_scale=0.0, 

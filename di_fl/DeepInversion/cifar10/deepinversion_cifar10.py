@@ -234,7 +234,7 @@ def get_images(net, loss_r_feature_layers, bs=256, epochs=1000, idx=-1, var_scal
     if net_student is not None:
         net_student.train()
 
-    return best_inputs
+    return best_inputs, targets
 
 
 def test():
