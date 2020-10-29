@@ -1,0 +1,17 @@
+CMD: ' cd /myws/codes/Octopy/di_fl/DeepInversion/cifar10; bash /myws/codes/ngc_comm/install.sh; python non_iid_di.py'
+HPARAMS:
+    logdir: LOGDIR
+    rounds: [100]
+    num_devices: [20]
+    device_pct: [1.0]
+    non_iid: [1]
+    scheduler: ['multistep', 'cosine']
+
+    local_epochs: [1]
+    local_lr: [0.01]
+    local_bsz: [64]
+
+    local_di: [0, 1]
+    local_di_batch_size: [20]
+    central_di: [-1,0,1,2]
+    central_di_batch_size: [300]

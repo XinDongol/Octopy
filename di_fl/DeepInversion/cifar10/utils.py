@@ -38,6 +38,7 @@ def get_standard_cifar10(root, batch_size, test_batch_size, num_workers):
 
     trainset = torchvision.datasets.CIFAR10(
         root=root, train=True, download=True, transform=transform_train)
+    #, target_transform=transforms.ToTensor())
     trainloader = torch.utils.data.DataLoader(
         trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
 
@@ -46,6 +47,20 @@ def get_standard_cifar10(root, batch_size, test_batch_size, num_workers):
     testloader = torch.utils.data.DataLoader(
         testset, batch_size=test_batch_size, shuffle=False, num_workers=num_workers)
     return trainloader, testloader
+
+
+class DatasetSplit(torch.utils.data.Dataset):
+    def __init__(self, dataset, indices):
+        self.dataset = dataset
+        self.indices = [int(i) for i in indices]
+        self.targets = [self.dataset.targets[i] for i in self.indices]
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, item):
+        image, label = self.dataset[self.indices[item]]
+        return image, torch.tensor(label)
 
 
 
