@@ -22,6 +22,7 @@ from quant_fl import fl_data
 from quant_fl import agg
 import utils
 import resnet_cifar
+from FedProx import FedProx
 
 from runx.logx import logx
 import timm
@@ -43,6 +44,11 @@ parser.add_argument('--local_di', type=int, choices=[0,1])
 parser.add_argument('--local_di_batch_size', type=int)
 parser.add_argument('--central_di', type=int, choices=[-1,0,1,2])
 parser.add_argument('--central_di_batch_size', type=int)
+
+# FedProx
+parser.add_argument('--fedprox', type=int, choices=[0,1])
+parser.add_argument('--fedprox_mu', type=float, default=0.0)
+parser.add_argument('--reset_momentum', type=int, choices=[0,1])
 
 args = parser.parse_args()
 
@@ -79,13 +85,18 @@ testloader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False,
 
 
 def create_device(net, device_id, trainset, data_idxs, lr=0.1,
-                  milestones=None, batch_size=128):
+                  milestones=None, batch_size=128, fedprox=False, fedprox_mu=None):
     if milestones == None:
         milestones = [25, 50, 65]
 
     device_net = copy.deepcopy(net)
-    optimizer = torch.optim.SGD(device_net.parameters(), lr=lr, momentum=0.9,
-                                weight_decay=5e-4)
+    if fedprox:
+        optimizer = FedProx(device_net.parameters(), lr=lr, momentum=0.9,
+                                    weight_decay=5e-4, mu=fedprox_mu)
+    else:
+        # assert fedprox_mu is None
+        optimizer = torch.optim.SGD(device_net.parameters(), lr=lr, momentum=0.9,
+                                    weight_decay=5e-4)
     # optimizer = torch.optim.Adam(device_net.parameters(), lr=lr, weight_decay=5e-4)
     if args.scheduler=='multistep':
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
@@ -115,10 +126,11 @@ def create_device(net, device_id, trainset, data_idxs, lr=0.1,
                        'test_acc' : utils.AutoStep(writer.add_scalar, 'client/%s/test_acc'%device_id)}
         }
   
-def train(epoch, device, tb=True, di=False):
+def train(epoch, device, tb=True):
     device['net'].train()
     train_loss, correct, total = 0, 0, 0
-    dataloader = device['di_dataloader'] if di else device['dataloader']
+    dataloader = device['dataloader']
+    # dataloader = device['di_dataloader'] if di else device['dataloader']
     for batch_idx, (inputs, targets) in enumerate(dataloader):
         inputs, targets = inputs.cuda(), targets.cuda()
         device['optimizer'].zero_grad()
@@ -141,6 +153,7 @@ def train(epoch, device, tb=True, di=False):
         device['tb_writers']['train_loss'].write(loss)
         device['tb_writers']['train_acc'].write(acc)
     return loss, acc
+
 
 
 def mixup_data(x_a, y_a, x_b=None, y_b=None, alpha=1.0, use_cuda=True):
@@ -319,8 +332,10 @@ def update_bn_ondataset(model, dataloader, update_epochs=50):
 net = resnet_cifar.ResNet18(num_classes=10).cuda()
 criterion = nn.CrossEntropyLoss()
 
-central_device = create_device(net, -1, trainset, list(range(len(trainset))), 
-                    lr=0.01)
+central_device = create_device(net, -1, trainset, 
+                    list(range(len(trainset))), lr=0.01, 
+                    fedprox=args.fedprox==1, 
+                    fedprox_mu=args.fedprox_mu)
 
 
 if args.non_iid:
@@ -329,7 +344,8 @@ if args.non_iid:
 else:
     data_idxs_dict = fl_data.uniform_random_split(trainset, args.num_devices)
 # deep copy net for each devices
-devices = [create_device(net, i, trainset, data_idxs_dict[i], lr=args.local_lr, batch_size=args.local_bsz)
+devices = [create_device(net, i, trainset, data_idxs_dict[i], lr=args.local_lr, batch_size=args.local_bsz,
+                        fedprox=args.fedprox==1, fedprox_mu=args.fedprox_mu)
            for i in range(args.num_devices)]
 
 #########################
@@ -354,6 +370,11 @@ for d_idx, device in enumerate([central_device]+devices):
     device['di_optimizer'] = optim.Adam([device['di_inputs']], lr=0.05)
 
 
+##############################
+# start FL
+##############################
+
+
 start_time = time.time()
 for round_num in range(args.rounds):
     round_devices = get_devices_for_round(devices, args.device_pct)
@@ -363,7 +384,14 @@ for round_num in range(args.rounds):
     for round_device_idx, device in enumerate(round_devices):
         for local_epoch in range(args.local_epochs):
             if (args.central_di==-1) or (round_num==0): # no central_di
-                local_loss, local_acc = train(local_epoch, device, di=False)
+                if args.fedprox==0:
+                    local_loss, local_acc = train(local_epoch, device)
+                elif args.fedprox==1:
+                    # update optimizer
+                    device['optimizer'].update_old_init(args.reset_momentum==1)
+                    local_loss, local_acc = train(local_epoch, device)
+                else:
+                    raise NotImplementedError
             elif args.central_di in [0,1,2]:
                 local_loss, local_acc = mix_train(local_epoch, device, central_device,
                     tb=True, mix_mode=args.central_di)
@@ -454,4 +482,4 @@ for round_num in range(args.rounds):
 
 
 total_time = time.time() - start_time
-logx.msg('Total training time: {} seconds'.format(total_time))
+logx.msg('Total training time: {} seconds'.format(total_time)) # test accuracy after aggregation
