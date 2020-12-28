@@ -72,7 +72,7 @@ class DeepInversionFeatureHook():
     def close(self):
         self.hook.remove()
 
-def get_images(net, loss_r_feature_layers, bs=256, epochs=1000, idx=-1, var_scale=0.00005,
+def get_images(net, loss_r_feature_layers, args, bs=256, epochs=1000, idx=-1, var_scale=0.00005,
                net_student=None, prefix=None, competitive_scale=0.01, train_writer = None, global_iteration=None,
                use_amp=False, main_loss=1.0,
                optimizer = None, inputs = None, targets=None,
@@ -102,6 +102,7 @@ def get_images(net, loss_r_feature_layers, bs=256, epochs=1000, idx=-1, var_scal
         A tensor on GPU with shape (bs, 3, 32, 32) for CIFAR
     '''
 
+    print('di setting', optimizer, main_loss, bn_reg_scale)
     kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
 
     if net_student is not None:
@@ -109,7 +110,7 @@ def get_images(net, loss_r_feature_layers, bs=256, epochs=1000, idx=-1, var_scal
         net_student.eval()
 
     best_cost = 1e6
-
+    
     # initialize gaussian inputs
     inputs.data = torch.randn((bs, 3, 32, 32), requires_grad=True, device='cuda')
     # if use_amp:
@@ -118,8 +119,17 @@ def get_images(net, loss_r_feature_layers, bs=256, epochs=1000, idx=-1, var_scal
     # set up criteria for optimization
     criterion = nn.CrossEntropyLoss()
 
-    optimizer.state = collections.defaultdict(dict)  # Reset state of optimizer
-
+    if optimizer is None:
+        optimizer = optim.Adam([inputs], lr=args.di_lr)
+    else:
+        optimizer.state = collections.defaultdict(dict)  # Reset state of optimizer
+        
+    if args.di_scheduler==1:
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, 
+                                                   milestones=[epochs//4, epochs//4*2, epochs//4*3], 
+                                                   gamma=0.1)
+    elif args.di_scheduler==2:
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs)
     # target outputs to generate
     if targets is None:
         if random_labels:
@@ -133,6 +143,7 @@ def get_images(net, loss_r_feature_layers, bs=256, epochs=1000, idx=-1, var_scal
     lim_0, lim_1 = 2, 2
 
     for epoch in range(epochs):
+        net.eval()
         # apply random jitter offsets
         off1 = random.randint(-lim_0, lim_0)
         off2 = random.randint(-lim_1, lim_1)
@@ -203,6 +214,8 @@ def get_images(net, loss_r_feature_layers, bs=256, epochs=1000, idx=-1, var_scal
             loss.backward()
 
         optimizer.step()
+        if args.di_scheduler!=0:
+            scheduler.step()
 
     outputs=net(best_inputs)
     _, predicted_teach = outputs.max(1)
