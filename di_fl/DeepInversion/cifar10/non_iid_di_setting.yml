@@ -6,16 +6,16 @@ HPARAMS: [
     num_devices: [10],
     device_pct: [1.0],
     non_iid: [1],
-    scheduler: ['cosine', 'multistep'],
+    scheduler: ['cosine'],
 
     local_epochs: [1,5,10],
     local_lr: [0.01],
     local_bsz: [64],
-    local_reset_optim: [0,1],
+    local_reset_optim: [0],
 
     di_lr: [0.05],
     di_steps: [2000],
-    di_scheduler: [0,2],
+    di_scheduler: [0],
 
     local_di: [1],
     local_di_reset_optim: [1],
@@ -23,10 +23,10 @@ HPARAMS: [
     local_di_celoss: [1.0],
     local_di_bnloss: [10.0],
     central_bn_update_celoss: [1.0],
-    central_bn_update_lr: [1e-2, 1e-3, 1e-4],
+    central_bn_update_lr: [1e-3, 1e-2],
     central_bn_update_momentum: [0.9],
     central_bn_update_epochs: [80],
-    central_bn_update_scheduler: [0,1],
+    central_bn_update_scheduler: [1],
 
     central_di: [1],
     central_di_batch_size: [64,256],
