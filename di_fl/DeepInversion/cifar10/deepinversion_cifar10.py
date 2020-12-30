@@ -101,7 +101,7 @@ def get_images(net, loss_r_feature_layers, args, bs=256, epochs=1000, idx=-1, va
     return:
         A tensor on GPU with shape (bs, 3, 32, 32) for CIFAR
     '''
-
+    net.eval()
     print('di setting', optimizer, main_loss, bn_reg_scale)
     kl_loss = nn.KLDivLoss(reduction='batchmean').cuda()
 

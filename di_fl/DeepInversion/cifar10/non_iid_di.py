@@ -1,5 +1,6 @@
 import time
 import copy
+from copy import deepcopy
 from collections import OrderedDict
 from argparse import ArgumentParser
 import json
@@ -46,6 +47,7 @@ parser.add_argument('--di_steps', type=int, default=2000)
 parser.add_argument('--di_scheduler', type=int)
 
 parser.add_argument('--local_di', type=int, choices=[0,1])
+parser.add_argument('--local_bn_stat_epochs', type=int)
 parser.add_argument('--local_di_reset_optim', type=int, choices=[0,1])
 parser.add_argument('--local_di_batch_size', type=int)
 parser.add_argument('--local_di_celoss', type=float, default=1.0)
@@ -65,6 +67,8 @@ parser.add_argument('--central_di_distill_temp', type=float)
 parser.add_argument('--central_di_distill_loss_scale', type=float)
 parser.add_argument('--central_di_batch_size', type=int)
 parser.add_argument('--local_mix_bsz', type=int)
+
+parser.add_argument('--print_local_test', type=int, default=0)
 
 # FedProx
 parser.add_argument('--fedprox', type=int, choices=[0,1])
@@ -178,8 +182,18 @@ def train(epoch, device, tb=True):
         device['train_acc_tracker'].append(acc)
         device['tb_writers']['train_loss'].write(loss)
         device['tb_writers']['train_acc'].write(acc)
+        
     return loss, acc
 
+def update_local_bn_stat(args, device):
+    model = device['net']
+    dataloader = device['dataloader']
+    model.train()
+    with torch.no_grad():
+        for e in range(args.local_bn_stat_epochs):
+            for batch_idx, (inputs, targets) in enumerate(dataloader):
+                inputs, targets = inputs.cuda(), targets.cuda()
+                outputs = model(inputs)
 
 
 def mixup_data(x_a, y_a, x_b=None, y_b=None, alpha=1.0, use_cuda=True): 
@@ -218,7 +232,7 @@ def mix_train(epoch, device, central_device, args, tb=True):
     device['net'].train()
     train_loss, correct, total = 0, 0, 0
     all_di_inputs, all_di_targets = central_device['di_image'], central_device['di_target']
-    candidate_idx   = list(range(all_di_targets.size(0)//args.local_mix_bsz))
+    candidate_idx = list(range(all_di_targets.size(0)//args.local_mix_bsz))
     # print(len(central_device['central_di'].dataset))
     # dataloader_iterator = iter(central_device['central_di'])
     
@@ -322,7 +336,7 @@ def test(epoch, device, tb=True):
             total      += targets.size(0)
             correct    += predicted.eq(targets).sum().item()
             loss        = test_loss / (batch_idx + 1)
-            acc         = 100.* correct / total
+            # acc         = 100.* correct / total
     # print(f' | Test Loss: {loss:.3f} | Test Acc: {acc:.3f}\n')
     acc = 100.*correct/total
 
@@ -362,6 +376,7 @@ def update_bn_stat(central_device,
         
     test_loss, test_acc = test(0, central_device, tb=False)
     logx.msg('Before BN Update | Acc %f'%(test_acc))
+    best_acc = test_acc
     
     for epoch_idx in range(args.central_bn_update_epochs): 
         model.train()
@@ -375,18 +390,18 @@ def update_bn_stat(central_device,
             if args.central_bn_update_scheduler: 
                 scheduler.step()
             
-        if epoch_idx%5== 0:
+        if epoch_idx%5==0:
             test_loss, test_acc = test(0, central_device, tb=False)
             logx.msg('During BN Update %d | Acc %f'%(epoch_idx, test_acc))
             if test_acc>best_acc: 
-                best_acc = test_acc
-                del best_state_dict
-                best_state_dict = model.state_dict()
+                best_acc = max(test_acc, best_acc)
+                # del best_state_dict
+                best_state_dict = deepcopy(model.state_dict())
                 
     model.load_state_dict(best_state_dict)
     test_loss, test_acc = test(0, central_device, tb=False)
     logx.msg('After BN Update | Acc %f'%(test_acc))
-    del best_state_dict
+    # del best_state_dict
 
 
 # net       = model.ConvNet().cuda()
@@ -466,6 +481,15 @@ for round_num in range(args.rounds):
 
         logx.msg(f'\r(Device {round_device_idx}) ' + 
                         f'Train Loss: {local_loss:.3f} | Train Acc: {local_acc:.3f}')
+        # just for debugging
+        if args.print_local_test:
+            test_loss, test_acc = test(round_num, device, tb=True)
+            logx.msg(f'\r(Device {round_device_idx}) ' + 
+                        f'Test Loss: {test_loss:.3f} | Test Acc: {test_acc:.3f}')
+        
+        if args.local_bn_stat_epochs>0:
+            logx.msg('Updating bn stats')
+            update_local_bn_stat(args, device)
         
         if args.local_di: 
             ########################### 
@@ -519,7 +543,7 @@ for round_num in range(args.rounds):
         logx.msg('====> get di image of central device...')
         central_device['net'].load_state_dict(w_avg)
         # central_di_num = int(len(data_idxs_dict[0])/args.di_batch_size + 1)
-        central_di_num = args.central_di_batch_size //args.local_mix_bsz
+        central_di_num = args.central_di_batch_size//args.local_mix_bsz
         
         all_central_di_image  = []
         all_central_di_target = []
@@ -558,15 +582,15 @@ for round_num in range(args.rounds):
                 targets = central_device['net'](di_image)
             all_central_di_target.append(targets.data)
         
-        del central_device['di_image'], central_device['di_target']
-        central_device['di_image']  = torch.cat(all_central_di_image)
-        central_device['di_target'] = torch.cat(all_central_di_target)
+        # del central_device['di_image'], central_device['di_target']
+        central_device['di_image'].copy_(torch.cat(all_central_di_image))
+        central_device['di_target'].copy(torch.cat(all_central_di_target))
         del all_central_di_image, all_central_di_target
         
     for device in devices: 
         device['net'].load_state_dict(w_avg)
-        device['optimizer'].zero_grad()
-        device['optimizer'].step()
+        # device['optimizer'].zero_grad()
+        # device['optimizer'].step()
         device['scheduler'].step()
         if args.local_reset_optim==1:
             device['optimizer'].load_state_dict(device['empty_optim_state_dict'])

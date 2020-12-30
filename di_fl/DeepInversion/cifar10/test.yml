@@ -1,0 +1,15 @@
+CMD: 'python non_iid_di.py'
+HPARAMS: [
+  {
+    logdir: LOGDIR,
+    haha: [2,4],
+    device_pct: [1.0, 0.5],
+    num_device: [5,10],
+  },
+  {
+    device_pct: [0.1, 0.2],
+    num_device: [50]
+  }
+
+    ]
+    
