@@ -583,8 +583,12 @@ for round_num in range(args.rounds):
             all_central_di_target.append(targets.data)
         
         # del central_device['di_image'], central_device['di_target']
-        central_device['di_image'].copy_(torch.cat(all_central_di_image))
-        central_device['di_target'].copy(torch.cat(all_central_di_target))
+        if central_device['di_image'] is not None:
+            central_device['di_image'].copy_(torch.cat(all_central_di_image))
+            central_device['di_target'].copy_(torch.cat(all_central_di_target))
+        else:
+            central_device['di_image']=torch.cat(all_central_di_image)
+            central_device['di_target']=torch.cat(all_central_di_target)       
         del all_central_di_image, all_central_di_target
         
     for device in devices: 

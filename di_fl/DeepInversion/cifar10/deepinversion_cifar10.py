@@ -28,6 +28,7 @@ import numpy as np
 import os
 import glob
 import collections
+from copy import deepcopy
 
 from resnet_cifar import ResNet34, ResNet18
 
@@ -204,7 +205,10 @@ def get_images(net, loss_r_feature_layers, args, bs=256, epochs=1000, idx=-1, va
 
         if best_cost > loss.item():
             best_cost = loss.item()
-            best_inputs = inputs.data
+            if best_inputs is not None:
+                best_inputs.copy_(inputs.data)
+            else:
+                best_inputs = deepcopy(inputs.data)
 
         # backward pass
         if use_amp:

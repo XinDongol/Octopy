@@ -29,7 +29,7 @@ HPARAMS: [
     central_bn_update_epochs: [80],
     central_bn_update_scheduler: [1],
 
-    central_di: [0,4],
+    central_di: [4],
     central_di_batch_size: [256],
     local_mix_bsz: [64],
     central_di_celoss: [1.0,0.0],
@@ -43,6 +43,16 @@ HPARAMS: [
     fedprox: [0],
     fedprox_mu: [0],
     reset_momentum: [0]
+    },
+    {
+    central_di: [0],
+    central_di_batch_size: [256],
+    local_mix_bsz: [64],
+    central_di_celoss: [1.0],
+    central_di_bnloss: [10.0],
+    central_di_reset_optim: [1],
+    central_di_distill_temp: [5.0],
+    central_di_distill_loss_scale: [0.1],
     }
     ]
     
