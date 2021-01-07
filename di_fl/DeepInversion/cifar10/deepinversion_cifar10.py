@@ -111,7 +111,7 @@ def get_images(net, loss_r_feature_layers, args, bs=256, epochs=1000, idx=-1, va
         net_student.eval()
 
     best_cost = 1e6
-    
+    best_inputs = None
     # initialize gaussian inputs
     inputs.data = torch.randn((bs, 3, 32, 32), requires_grad=True, device='cuda')
     # if use_amp:

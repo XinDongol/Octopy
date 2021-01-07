@@ -23,6 +23,35 @@ def uniform_random_split(dataset, num_clients):
     print('Len of last client: %d'%len(split_result[-1]))
     return {idx:i.tolist() for idx, i in enumerate(split_result)}
 
+
+def dir_split(dataset, num_clients, alpha):
+    min_size = 0
+    K = 10                   # number of class
+    assert len(set(dataset.targets))==K
+    y_train = np.array(dataset.targets)
+
+    N = y_train.shape[0]     # number of images in the dataset
+    net_dataidx_map = {}
+
+    while min_size < 10:
+        idx_batch = [[] for _ in range(num_clients)]   # 每个 list 是一个
+        # for each class in the dataset
+        for k in range(K):
+            idx_k = np.where(y_train == k)[0]   # find all images in class k
+            np.random.shuffle(idx_k)
+            proportions = np.random.dirichlet(np.repeat(alpha, num_clients))
+            ## Balance
+            proportions = np.array([p*(len(idx_j)<N/num_clients) for p,idx_j in zip(proportions,idx_batch)])  # 如果某个 device 当前的数据量已经超了, 那么就不往里面加了. 
+            proportions = proportions/proportions.sum()
+            proportions = (np.cumsum(proportions)*len(idx_k)).astype(int)[:-1]
+            idx_batch = [idx_j + idx.tolist() for idx_j,idx in zip(idx_batch,np.split(idx_k,proportions))]
+            min_size = min([len(idx_j) for idx_j in idx_batch])  # 保证某个 device 最小的数据量不小于 10
+
+    for j in range(num_clients):
+        np.random.shuffle(idx_batch[j])
+        net_dataidx_map[j] = idx_batch[j]
+    return net_dataidx_map
+
 def non_iid_split(dataset, num_clients, shards_per_client=2):
 
     num_shards = num_clients * shards_per_client

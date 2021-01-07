@@ -34,6 +34,7 @@ parser.add_argument('--rounds', type=int)
 parser.add_argument('--num_devices', type=int)
 parser.add_argument('--device_pct', type=float)
 parser.add_argument('--non_iid', type=int, choices=[0, 1])
+parser.add_argument('--split_method', type=int, default=1)
 parser.add_argument('--scheduler', type=str, choices=['multistep', 'cosine'])
 # local setting
 parser.add_argument('--local_epochs', type=int)
@@ -41,6 +42,8 @@ parser.add_argument('--local_lr', type=float)
 parser.add_argument('--local_bsz', type=int)
 parser.add_argument('--local_reset_optim', type=int)
 
+parser.add_argument('--ensure_upload_before', type=int, default=100)
+parser.add_argument('--upload_every', type=int, default=1)
 # local di process
 parser.add_argument('--di_lr', type=float, default=0.05)
 parser.add_argument('--di_steps', type=int, default=2000)
@@ -68,7 +71,7 @@ parser.add_argument('--central_di_distill_loss_scale', type=float)
 parser.add_argument('--central_di_batch_size', type=int)
 parser.add_argument('--local_mix_bsz', type=int)
 
-parser.add_argument('--print_local_test', type=int, default=0)
+parser.add_argument('--save_all', type=int, default=0)
 
 # FedProx
 parser.add_argument('--fedprox', type=int, choices=[0,1])
@@ -80,6 +83,8 @@ assert args.central_di_batch_size%args.local_mix_bsz==0
 
 logx.initialize(logdir=args.logdir, coolname=True, tensorboard=True,
                 hparams=vars(args))
+
+utils.mkdir(logx.logdir+'/saved')
 
 writer = SummaryWriter(args.logdir)
 
@@ -142,7 +147,7 @@ def create_device(args, net, device_id, trainset, data_idxs,
         'id'                : device_id,
         'dataloader'        : device_trainloader,
         'optimizer'         : optimizer,
-        'empty_optim_state_dict': optimizer.state_dict(),
+        'empty_optim_state_dict': deepcopy(optimizer.state_dict()),
         'scheduler'         : scheduler,
         'train_loss_tracker': [],
         'train_acc_tracker' : [],
@@ -156,7 +161,7 @@ def create_device(args, net, device_id, trainset, data_idxs,
         'di_target': None
         }
   
-def train(epoch, device, tb=True): 
+def train(args, epoch, device, w_avg, tb=True): 
     device['net'].train()
     train_loss, correct, total = 0, 0, 0
     dataloader = device['dataloader']
@@ -166,6 +171,13 @@ def train(epoch, device, tb=True):
         device['optimizer'].zero_grad()
         outputs = device['net'](inputs)
         loss    = criterion(outputs, targets)
+        if args.fedprox_mu>0:
+            fedprox_reg = 0.0
+            for n,p in device['net'].named_parameters():
+                assert p.requires_grad==True
+                fedprox_reg += ((args.fedprox_mu / 2) * torch.norm((p - w_avg[n].detach()))**2)
+            loss += fedprox_reg
+
         loss.backward()
         device['optimizer'].step()
         train_loss += loss.item()
@@ -377,6 +389,7 @@ def update_bn_stat(central_device,
     test_loss, test_acc = test(0, central_device, tb=False)
     logx.msg('Before BN Update | Acc %f'%(test_acc))
     best_acc = test_acc
+    best_state_dict = deepcopy(model.state_dict())
     
     for epoch_idx in range(args.central_bn_update_epochs): 
         model.train()
@@ -418,8 +431,14 @@ central_device = create_device(args=args,
 
 
 if args.non_iid: 
-    data_idxs_dict = fl_data.non_iid_split(trainset, args.num_devices, 
+    if args.split_method==1:
+        data_idxs_dict = fl_data.non_iid_split(trainset, args.num_devices, 
                         shards_per_client=2)
+    elif args.split_method==2:
+        data_idxs_dict = fl_data.dir_split(trainset, args.num_devices, 
+                        alpha=0.5) 
+    else:
+        raise NotImplementedError       
 else: 
     data_idxs_dict = fl_data.uniform_random_split(trainset, args.num_devices)
 # deep copy net for each devices
@@ -431,7 +450,8 @@ devices = [
                   data_idxs=data_idxs_dict[i]) 
            for i in range(args.num_devices)
            ]
-
+if args.save_all:
+    np.save(logx.logdir+'/data_part.npy', data_idxs_dict)
 #########################
 ## register hooks, inputs and optimizer
 #############################
@@ -456,6 +476,8 @@ for d_idx, device in enumerate([central_device]+devices):
 ##############################
 # start FL
 ##############################
+w_avg = central_device['net'].state_dict()
+
 start_time = time.time()
 for round_num in range(args.rounds): 
     round_devices  = get_devices_for_round(devices, args.device_pct)
@@ -466,11 +488,11 @@ for round_num in range(args.rounds):
         for local_epoch in range(args.local_epochs): 
             if  (args.central_di==0) or (round_num==0) : # no central_di
                 if  args.fedprox==0: 
-                    local_loss, local_acc = train(local_epoch, device)
+                    local_loss, local_acc = train(args, local_epoch, device, w_avg)
                 elif  args.fedprox==1:
                     # update optimizer
                     device['optimizer'].update_old_init(args.reset_momentum==1)
-                    local_loss, local_acc = train(local_epoch, device)
+                    local_loss, local_acc = train(args, local_epoch, device, w_avg)
                 else: 
                     raise NotImplementedError
             elif args.central_di in [1,2,3,4]: 
@@ -482,10 +504,11 @@ for round_num in range(args.rounds):
         logx.msg(f'\r(Device {round_device_idx}) ' + 
                         f'Train Loss: {local_loss:.3f} | Train Acc: {local_acc:.3f}')
         # just for debugging
-        if args.print_local_test:
+        if args.save_all:
             test_loss, test_acc = test(round_num, device, tb=True)
             logx.msg(f'\r(Device {round_device_idx}) ' + 
                         f'Test Loss: {test_loss:.3f} | Test Acc: {test_acc:.3f}')
+            
         
         if args.local_bn_stat_epochs>0:
             logx.msg('Updating bn stats')
@@ -524,15 +547,32 @@ for round_num in range(args.rounds):
             device['di_target'] = targets
             all_inv_image.append(di_tensor)
             all_inv_target.append(targets)
+            
+    if args.save_all:
+        save_dict = {str(d['id'])+'_model':d['net'].state_dict() for d in round_devices}
+        save_dict.update({str(d['id'])+'_diimage':d['di_image'] for d in round_devices})
+        save_dict.update({str(d['id'])+'_ditarget':d['di_target'] for d in round_devices})
         
-    # weight average
-    w_avg = agg.average_weights(round_devices) # average all in the state_dict
-    
+    if (round_num>args.ensure_upload_before \
+        and (round_num-args.ensure_upload_before)%args.upload_every==0) \
+            or (round_num<=args.ensure_upload_before):
+        # weight average
+        logx.msg('%d Round upload local model'%round_num)
+        w_avg = agg.average_weights(round_devices) # average all in the state_dict
+    else:
+        logx.msg('%d Round NOT upload local model'%round_num)
+
+    if args.save_all:
+        central_sd_before_update = deepcopy(w_avg)
     # local di
     if args.local_di: 
         logx.msg('====> Round %d| update central device with local di images...'%round_num)
         central_device['net'].load_state_dict(w_avg)
         all_inv_image_tensor, all_inv_target_tensor = torch.cat(all_inv_image), torch.cat(all_inv_target)
+        
+        # if 1:
+        #     torch.save({'image': all_inv_image_tensor, 
+        #                 'target': all_inv_target_tensor}, logx.logdir+'/%d-local_di.pth'%round_num)
         update_bn_stat(central_device, all_inv_image_tensor, all_inv_target_tensor, args, logx)
         del all_inv_image_tensor, all_inv_target_tensor, all_inv_image, all_inv_target
         w_avg = central_device['net'].state_dict()
@@ -590,6 +630,13 @@ for round_num in range(args.rounds):
             central_device['di_image']=torch.cat(all_central_di_image)
             central_device['di_target']=torch.cat(all_central_di_target)       
         del all_central_di_image, all_central_di_target
+        
+    if args.save_all:
+        save_dict.update({'central_diimage': central_device['di_image'],
+                          'central_ditarget': central_device['di_target'],
+                          'w_avg_before_update': central_sd_before_update,
+                          'w_avg_after_update': w_avg})
+        torch.save(save_dict, logx.logdir+'/saved/%d.pth.tar'%round_num)
         
     for device in devices: 
         device['net'].load_state_dict(w_avg)

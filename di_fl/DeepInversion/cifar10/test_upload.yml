@@ -3,25 +3,25 @@ HPARAMS: [
     {
     logdir: LOGDIR,
     rounds: [100],
-    num_devices: [10],
-    device_pct: [1],
+    num_devices: [20],
+    device_pct: [0.5],
     non_iid: [1],
-    split_method: [2],
+    split_method: [1],
     scheduler: ['cosine'],
 
-    local_epochs: [1,5,10,20],
+    local_epochs: [5],
     local_lr: [0.01],
     local_bsz: [64],
-    local_reset_optim: [1],
+    local_reset_optim: [0],
 
-    ensure_upload_before: [20000],
-    upload_every: [1],
+    ensure_upload_before: [0, 5, 10, 20],
+    upload_every: [2,5,10],
 
     di_lr: [0.05],
     di_steps: [2000],
     di_scheduler: [0],
 
-    local_di: [0],
+    local_di: [1],
     local_bn_stat_epochs: [0],
     local_di_reset_optim: [1],
     local_di_batch_size: [32],
@@ -44,13 +44,13 @@ HPARAMS: [
 
     save_all: [0],
 
-    fedprox: [0],
+    fedprox: [0], # do not use this for now
     fedprox_mu: [0],
     reset_momentum: [0]
     },
-    # {
-    # num_devices: [10],
-    # device_pct: [1.0],
-    # },
+    {
+    num_devices: [10],
+    device_pct: [1.0],
+    }
     ]
     

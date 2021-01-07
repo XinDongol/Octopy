@@ -6,7 +6,9 @@ import threading
 
 
 class FedProx(Optimizer):
-    r"""Implements FedAvg and FedProx. Local Solver can have momentum.
+    r"""
+    from https://github.com/JYWa/FedNova/blob/master/distoptim/FedProx.py
+    Implements FedAvg and FedProx. Local Solver can have momentum.
 
     Nesterov momentum is based on the formula from
     `On the importance of initialization and momentum in deep learning`__.
