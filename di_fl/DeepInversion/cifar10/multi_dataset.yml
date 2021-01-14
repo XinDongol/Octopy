@@ -2,7 +2,7 @@ CMD: 'CUDA_VISIBLE_DEVICES=0 python non_iid_di.py'
 HPARAMS: [
     {
     logdir: LOGDIR,
-    dataset: ['cifar10'],
+    dataset: ['cifar100', 'svhn'],
     rounds: [100],
     num_devices: [10],
     device_pct: [1.0],
@@ -10,12 +10,12 @@ HPARAMS: [
     split_method: [1],
     scheduler: ['cosine'],
 
-    local_epochs: [5],
+    local_epochs: [1,5,10,20],
     local_lr: [0.01],
     local_bsz: [64],
     local_reset_optim: [0],
 
-    ensure_upload_before: [0],
+    ensure_upload_before: [1000],
     upload_every: [2],
 
     di_lr: [0.05],
@@ -25,7 +25,7 @@ HPARAMS: [
     local_di: [1],
     local_bn_stat_epochs: [0],
     local_di_reset_optim: [1],
-    local_di_batch_size: [32,8],
+    local_di_batch_size: [32],
     local_di_celoss: [1.0],
     local_di_bnloss: [10.0],
     central_bn_update_celoss: [1.0],
@@ -50,17 +50,18 @@ HPARAMS: [
     reset_momentum: [0]
     },
     {
+    num_devices: [20],
+    device_pct: [0.5],
+    },
+    {
     local_di: [0],
-    local_di_batch_size: [8],
-    fedprox_mu: [0.001]
+    fedprox_mu: [0, 0.001, 0.01, 0.1],
     },
     {
-    ensure_upload_before: [10],
-    upload_every: [5],
-    },
-    {
-    ensure_upload_before: [20],
-    upload_every: [5],    
-    }
+    num_devices: [20],
+    device_pct: [0.5],
+    local_di: [0],
+    fedprox_mu: [0, 0.001, 0.01, 0.1],
+    },    
     ]
     

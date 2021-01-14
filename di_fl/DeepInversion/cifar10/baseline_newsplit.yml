@@ -3,13 +3,13 @@ HPARAMS: [
     {
     logdir: LOGDIR,
     rounds: [100],
-    num_devices: [20],
-    device_pct: [0.5],
+    num_devices: [10],
+    device_pct: [1.0],
     non_iid: [1],
-    split_method: [1,2],
+    split_method: [1],
     scheduler: ['cosine'],
 
-    local_epochs: [1,5,10],
+    local_epochs: [5],
     local_lr: [0.01],
     local_bsz: [64],
     local_reset_optim: [0],
@@ -21,10 +21,10 @@ HPARAMS: [
     di_steps: [2000],
     di_scheduler: [0],
 
-    local_di: [0],
+    local_di: [1],
     local_bn_stat_epochs: [0],
     local_di_reset_optim: [1],
-    local_di_batch_size: [16],
+    local_di_batch_size: [32,8],
     local_di_celoss: [1.0],
     local_di_bnloss: [10.0],
     central_bn_update_celoss: [1.0],
@@ -45,35 +45,35 @@ HPARAMS: [
     save_all: [0],
 
     fedprox: [0], # do not use this for now
-    fedprox_mu: [0.001, 0.1, 0.5],
+    fedprox_mu: [0],
     reset_momentum: [0]
     },
-    {
-    num_devices: [10],
-    device_pct: [1.0],
-    },
-    {
-    fedprox_mu: [0],
-    split_method: [2],
-    },
-    {
-    num_devices: [10],
-    device_pct: [1.0],
-    fedprox_mu: [0],
-    split_method: [2],
-    },
-    {
-    fedprox_mu: [0],
-    split_method: [1],
-    local_epochs: [10],
-    },
-    {
-    num_devices: [10],
-    device_pct: [1.0],
-    fedprox_mu: [0],
-    split_method: [1],
-    local_epochs: [10],
-    }
+    # {
+    # num_devices: [10],
+    # device_pct: [1.0],
+    # },
+    # {
+    # fedprox_mu: [0],
+    # split_method: [2],
+    # },
+    # {
+    # num_devices: [10],
+    # device_pct: [1.0],
+    # fedprox_mu: [0],
+    # split_method: [2],
+    # },
+    # {
+    # fedprox_mu: [0],
+    # split_method: [1],
+    # local_epochs: [10],
+    # },
+    # {
+    # num_devices: [10],
+    # device_pct: [1.0],
+    # fedprox_mu: [0],
+    # split_method: [1],
+    # local_epochs: [10],
+    # }
     ]
     
 # CMD: 'CUDA_VISIBLE_DEVICES=0 python non_iid_di.py'

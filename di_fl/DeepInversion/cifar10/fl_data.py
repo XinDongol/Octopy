@@ -7,8 +7,11 @@ class DatasetSplit(torch.utils.data.Dataset):
     def __init__(self, dataset, idxs):
         self.dataset = dataset
         self.idxs = [int(i) for i in idxs]
-        self.targets = [self.dataset.targets[i] for i in self.idxs]
-
+        try:
+            self.targets = [self.dataset.targets[i] for i in self.idxs]
+        except:
+            self.targets = [self.dataset.labels[i] for i in self.idxs]
+            
     def __len__(self):
         return len(self.idxs)
 
@@ -60,8 +63,11 @@ def non_iid_split(dataset, num_clients, shards_per_client=2):
     idx_shard = list(range(num_shards))
     dict_users = {i: np.array([], dtype='int32') for i in range(num_clients)}
     idxs = np.arange(len(dataset)).astype(np.int32)
-    labels = np.array(dataset.targets).astype(np.int32)
 
+    try:
+        labels = np.array(dataset.targets).astype(np.int32)
+    except:
+        labels = np.array(dataset.labels).astype(np.int32)
     # sort labels
     idxs_labels = np.vstack((idxs, labels))
     idxs_labels = idxs_labels[:,idxs_labels[1,:].argsort()]

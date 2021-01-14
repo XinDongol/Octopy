@@ -48,6 +48,68 @@ def get_standard_cifar10(root, batch_size, test_batch_size, num_workers):
         testset, batch_size=test_batch_size, shuffle=False, num_workers=num_workers)
     return trainloader, testloader
 
+def get_standard_cifar100(root, batch_size, test_batch_size, num_workers):
+    '''
+    from 
+    https://github.com/junyuseu/pytorch-cifar-models/blob/master/main.py
+    '''
+    transform_train = transforms.Compose([
+        transforms.RandomCrop(32, padding=4),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize((0.507, 0.487, 0.441), (0.267, 0.256, 0.276)),
+    ])
+
+    transform_test = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.507, 0.487, 0.441), (0.267, 0.256, 0.276)),
+    ])
+
+    trainset = torchvision.datasets.CIFAR100(
+        root=root, train=True, download=True, transform=transform_train)
+    #, target_transform=transforms.ToTensor())
+    trainloader = torch.utils.data.DataLoader(
+        trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
+
+    testset = torchvision.datasets.CIFAR100(
+        root=root, train=False, download=True, transform=transform_test)
+    testloader = torch.utils.data.DataLoader(
+        testset, batch_size=test_batch_size, shuffle=False, num_workers=num_workers)
+    return trainloader, testloader
+
+def get_standard_svhn(root, batch_size, test_batch_size, num_workers):
+    '''
+    about svhn-3x32x32
+    https://www.tensorflow.org/datasets/catalog/svhn_cropped
+    train: 73257, test: 26032. 
+
+    from 
+    https://deepobs.readthedocs.io/en/develop/_modules/deepobs/pytorch/datasets/svhn.html
+    '''
+    transform_train = transforms.Compose([
+        transforms.RandomCrop(32, padding=4),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize((0.4376821, 0.4437697, 0.47280442), (0.5, 0.5, 0.5)),
+    ])
+
+    transform_test = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.4376821, 0.4437697, 0.47280442), (0.5, 0.5, 0.5)),
+    ])
+
+    trainset = torchvision.datasets.SVHN(
+        root=root, split='train', download=True, transform=transform_train)
+    #, target_transform=transforms.ToTensor())
+    trainloader = torch.utils.data.DataLoader(
+        trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
+
+    testset = torchvision.datasets.SVHN(
+        root=root, split='test', download=True, transform=transform_test)
+    testloader = torch.utils.data.DataLoader(
+        testset, batch_size=test_batch_size, shuffle=False, num_workers=num_workers)
+    return trainloader, testloader
+
 
 class DatasetSplit(torch.utils.data.Dataset):
     def __init__(self, dataset, indices):

@@ -45,7 +45,7 @@ HPARAMS: [
     save_all: [0],
 
     fedprox: [0],
-    fedprox_mu: [0],
+    fedprox_mu: [0, 0.01, 0.1, 0.5],
     reset_momentum: [0]
     },
     # {

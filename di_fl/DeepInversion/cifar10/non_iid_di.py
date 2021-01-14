@@ -30,6 +30,8 @@ import timm
 
 parser = ArgumentParser()
 parser.add_argument('--logdir', type=str)
+parser.add_argument('--dataset', type=str, default='cifar10', 
+                                choices=['cifar10', 'cifar100', 'svhn'])
 parser.add_argument('--rounds', type=int)
 parser.add_argument('--num_devices', type=int)
 parser.add_argument('--device_pct', type=float)
@@ -140,7 +142,7 @@ def create_device(args, net, device_id, trainset, data_idxs,
     device_trainloader = torch.utils.data.DataLoader(device_trainset,
                                                      batch_size  = args.local_bsz,
                                                      shuffle     = True,
-                                                     num_workers = 4,          
+                                                     num_workers = 8,          
                                                      drop_last = False)
     return {
         'net'               : device_net,
