@@ -32,6 +32,8 @@ parser = ArgumentParser()
 parser.add_argument('--logdir', type=str)
 parser.add_argument('--dataset', type=str, default='cifar10', 
                                 choices=['cifar10', 'cifar100', 'svhn'])
+parser.add_argument('--model', type=str, default='resnet18', 
+                                choices=['resnet18', 'convnet'])
 parser.add_argument('--rounds', type=int)
 parser.add_argument('--num_devices', type=int)
 parser.add_argument('--device_pct', type=float)
@@ -95,25 +97,54 @@ writer = SummaryWriter(args.logdir)
 # trainset and testset
 ##########################
 
-transform_train = transforms.Compose([                                   
-    transforms.RandomCrop(32, padding=4),                                       
-    transforms.RandomHorizontalFlip(),
-    transforms.ToTensor(),
-    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-])
-trainset = torchvision.datasets.CIFAR10(root='~/results/cifar', train=True, 
-                                        download  = True,
-                                        transform = transform_train)
+# transform_train = transforms.Compose([                                   
+#     transforms.RandomCrop(32, padding=4),                                       
+#     transforms.RandomHorizontalFlip(),
+#     transforms.ToTensor(),
+#     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+# ])
+# trainset = torchvision.datasets.CIFAR10(root='~/results/cifar', train=True, 
+#                                         download  = True,
+#                                         transform = transform_train)
 
-transform_test = transforms.Compose([                                           
-    transforms.ToTensor(),
-    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-])
-testset = torchvision.datasets.CIFAR10(root='~/results/cifar', train=False,
-                                       download  = True,
-                                       transform = transform_test)
-testloader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False,
-                                         num_workers=2)
+# transform_test = transforms.Compose([                                           
+#     transforms.ToTensor(),
+#     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+# ])
+# testset = torchvision.datasets.CIFAR10(root='~/results/cifar', train=False,
+#                                        download  = True,
+#                                        transform = transform_test)
+# testloader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False,
+#                                          num_workers=2)
+
+if args.dataset=='cifar10':
+    full_trainloader, testloader = utils.get_standard_cifar10(
+        root='~/results/cifar',
+        batch_size=128,
+        test_batch_size=128,
+        num_workers=4
+    )
+    trainset = full_trainloader.dataset
+    testset  = testloader.dataset
+elif args.dataset=='svhn':
+    full_trainloader, testloader = utils.get_standard_svhn(
+        root='~/results/svhn',
+        batch_size=128,
+        test_batch_size=128,
+        num_workers=4
+    )
+    trainset = full_trainloader.dataset
+    testset  = testloader.dataset
+
+elif args.dataset=='cifar100':
+    full_trainloader, testloader = utils.get_standard_cifar100(
+        root='~/results/cifar100',
+        batch_size=128,
+        test_batch_size=128,
+        num_workers=4
+    )
+    trainset = full_trainloader.dataset
+    testset  = testloader.dataset
 
 
 
@@ -421,7 +452,14 @@ def update_bn_stat(central_device,
 
 # net       = model.ConvNet().cuda()
 # net       = model.CifarNet().cuda()
-net       = resnet_cifar.ResNet18(num_classes=10).cuda()
+
+model_num_classes=100 if args.dataset=='cifar100' else 10
+if args.model=='resnet18':
+    net = resnet_cifar.ResNet18(num_classes=model_num_classes).cuda()
+elif args.model=='convnet':
+    net = resnet_cifar.ConvNet(num_classes=model_num_classes).cuda()
+    
+
 criterion = nn.CrossEntropyLoss()
 
 central_device = create_device(args=args, 
